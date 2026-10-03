@@ -216,5 +216,7 @@ export function createSeaweed(r) {
 
   const kelpMesh = buildMesh(material, 16, kelp);
   const grassMesh = buildMesh(material, 4, grass);
-  return { meshes: [kelpMesh, grassMesh], material, pushers };
+  // kelp clusters as vertical cylinders, for tapping
+  const tappable = clusters.map(([x, z, , rad, , h1]) => ({ x, z, r: rad + 0.35, h: h1 * 0.9 }));
+  return { meshes: [kelpMesh, grassMesh], material, pushers, clusters: tappable };
 }

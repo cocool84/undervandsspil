@@ -45,6 +45,59 @@
     </svg>
   </div>
 
+  <div id="hud" class="hud">
+    <button id="btn-feed" class="hud-btn" type="button" aria-label="Fodre fiskene">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <g transform="rotate(55 44 46)">
+          <rect x="22" y="30" width="44" height="50" rx="13" fill="#fff4d6" stroke="#6b3d22" stroke-width="5"/>
+          <rect x="18" y="16" width="52" height="19" rx="7" fill="#ff7a4a" stroke="#6b3d22" stroke-width="5"/>
+          <circle cx="35" cy="50" r="5.4" fill="#ff5d5d"/>
+          <circle cx="53" cy="56" r="5.4" fill="#35d07f"/>
+          <circle cx="39" cy="68" r="5.4" fill="#3fa9ff"/>
+          <circle cx="54" cy="41" r="4.6" fill="#ffd23f"/>
+        </g>
+        <g class="flakes" stroke="#6b3d22" stroke-width="2.5">
+          <circle cx="80" cy="62" r="6" fill="#ffd23f"/>
+          <circle cx="90" cy="78" r="5" fill="#ff5d8f"/>
+          <circle cx="74" cy="88" r="5" fill="#35d07f"/>
+        </g>
+      </svg>
+    </button>
+    <button id="btn-night" class="hud-btn" type="button" aria-label="Dag og nat">
+      <svg class="i-moon" viewBox="0 0 100 100" aria-hidden="true">
+        <defs><mask id="moon-cut"><rect width="100" height="100" fill="#fff"/><circle cx="66" cy="36" r="27" fill="#000"/></mask></defs>
+        <circle cx="47" cy="53" r="31" fill="#ffe9a0" stroke="#6b5a22" stroke-width="4" mask="url(#moon-cut)"/>
+        <path d="M27 54 q6 5 12 0" stroke="#6b5a22" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+        <path d="M30 66 q6 6 12 0" stroke="#6b5a22" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+        <path d="M78 64 l2.4 5 5.4.8-3.9 3.8.9 5.4-4.8-2.6-4.8 2.6.9-5.4-3.9-3.8 5.4-.8z" fill="#fff6c8"/>
+        <circle cx="84" cy="22" r="3" fill="#fff6c8"/>
+      </svg>
+      <svg class="i-sun" viewBox="0 0 100 100" aria-hidden="true">
+        <g class="rays" stroke="#ffb02e" stroke-width="7" stroke-linecap="round">
+          <line x1="50" y1="8" x2="50" y2="18"/><line x1="50" y1="82" x2="50" y2="92"/>
+          <line x1="8" y1="50" x2="18" y2="50"/><line x1="82" y1="50" x2="92" y2="50"/>
+          <line x1="20" y1="20" x2="27" y2="27"/><line x1="73" y1="73" x2="80" y2="80"/>
+          <line x1="20" y1="80" x2="27" y2="73"/><line x1="73" y1="27" x2="80" y2="20"/>
+        </g>
+        <circle cx="50" cy="50" r="24" fill="#ffd23f" stroke="#c77a12" stroke-width="4"/>
+        <circle cx="42" cy="46" r="3.4" fill="#6b3d12"/><circle cx="58" cy="46" r="3.4" fill="#6b3d12"/>
+        <path d="M40 56 q10 9 20 0" stroke="#6b3d12" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+        <circle cx="36" cy="55" r="3.6" fill="#ff8a6a" opacity="0.7"/><circle cx="64" cy="55" r="3.6" fill="#ff8a6a" opacity="0.7"/>
+      </svg>
+    </button>
+    <button id="btn-sound" class="hud-btn hud-mini" type="button" aria-label="Lyd til eller fra">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <path d="M18 40h14l20-16v52L32 60H18z" fill="#ffffff" stroke="#2a4f78" stroke-width="5" stroke-linejoin="round"/>
+        <g class="waves" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round">
+          <path d="M64 38 q8 12 0 24"/><path d="M74 28 q15 22 0 44"/>
+        </g>
+        <g class="cross" stroke="#ffffff" stroke-width="7" stroke-linecap="round">
+          <line x1="64" y1="38" x2="84" y2="62"/><line x1="84" y1="38" x2="64" y2="62"/>
+        </g>
+      </svg>
+    </button>
+  </div>
+
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

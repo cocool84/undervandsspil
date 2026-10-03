@@ -18,9 +18,14 @@ import { Jellyfish } from './jellyfish.js';
 import { Plankton } from '../particles/plankton.js';
 import { Bubbles } from '../particles/bubbles.js';
 import { Shadows } from '../particles/shadows.js';
+import { Fx } from '../particles/fx.js';
+import { Food } from '../particles/food.js';
+import { Treasure } from '../particles/treasure.js';
 import { School } from '../fish/school.js';
 
 const _v = new THREE.Vector3();
+const _crab = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 0.45, 0);
 
 export class World {
   constructor(core, rig) {
@@ -65,6 +70,36 @@ export class World {
     this.school = new School({ scene, rig, shadows: this.shadows, pushers: this.seaweed.pushers, obstacles });
     if (!this.school.grid) this.school.addStarters();
 
+    // effects, food and treasure
+    this.fx = new Fx();
+    this.food = new Food();
+    this.treasure = new Treasure(this.fx);
+    scene.add(...this.fx.objects, this.food.mesh, ...this.treasure.objects);
+    this.school.food = this.food;
+    this.chest.onTreasure = (p) => {
+      this.treasure.burst(p, 22);
+      this.fx.sparkles(p, 14, 1.4, '#ffe9a0');
+      this.bubbles.burst(p.x, p.y, p.z, 14, 0.4, 0.06, 0.18);
+    };
+    this.food.onLanded = (flake) => {
+      if (Math.abs(flake.pos.z - this.crab.z) < 2.2 && flake.pos.x > -4.6 && flake.pos.x < 5) this.crab.goEat(flake);
+    };
+    this.crab.onEat = (flake) => {
+      if (this.food.eat(flake)) this.onCrabEat?.(this.crab.worldCenter);
+    };
+
+    // things you can tap (besides fish, sand and water), as world-space spheres
+    const anemoneIds = [0, 1, 2];
+    const world = this;
+    this.pickables = [
+      { type: 'chest', center: new THREE.Vector3(2.0, sandHeight(2.0, 0.9) + 0.9, 0.9), radius: 1.5 },
+      { type: 'crab', get center() { return _crab.copy(world.crab.root.position).add(_up); }, radius: 1.0 },
+      ...this.jellies.jellies.map((j, i) => ({ type: 'jelly', index: i, get center() { return j.pos; }, radius: j.size * 1.15 })),
+      ...anemoneIds.map((i) => ({ type: 'anemone', index: i, center: new THREE.Vector3(this.corals.anemones[i].x, this.corals.anemones[i].y, this.corals.anemones[i].z), radius: 0.85 })),
+      ...this.corals.occluders.map(([x, z, r]) => ({ type: 'coral', center: new THREE.Vector3(x, sandHeight(x, z) + r * 0.6, z), radius: r * 0.8 })),
+      ...this.rocks.spheres.map((s) => ({ type: 'rock', center: new THREE.Vector3(s.x, s.y, s.z), radius: s.r * 0.9 })),
+    ];
+
     this.chest.onBubbles = (p) => this.bubbles.spawn(p.x, p.y, p.z, 0.05 + Math.random() * 0.1, 1.1 + Math.random() * 0.6, 0.05);
 
     // bubble vents at the foot of the rocks
@@ -103,6 +138,9 @@ export class World {
 
     this.chest.update(t, dt);
     this.crab.update(t, dt, camera);
+    this.food.update(t, dt);
+    this.treasure.update(dt);
+    this.fx.update();
     this.school.update(t, dt, camera, U.uNight.value > 0.5);
     this.shadows.begin();
     this.school.castShadows();

@@ -62,7 +62,7 @@ void main() {
     float pulse = 0.7 + 0.3 * sin(uTime * 2.0);
     col = vColor * 0.2 + vec3(2.4, 1.6, 0.5) * (uNight * pulse + uOpen * 1.5 + uFlash);
   } else {
-    col = vColor * 0.3 + vec3(2.6, 1.9, 0.7) * (uOpen * 1.2 + uFlash * 0.5);
+    col = vColor * 0.3 + vec3(2.6, 1.9, 0.7) * (uOpen * 2.2 + uFlash * 0.8);
   }
   col += vec3(1.2, 0.9, 0.4) * uFlash * 0.25;
   col = applyFog(col, vWpos);
@@ -109,6 +109,7 @@ export class Chest {
     this.group = new THREE.Group();
     this.group.position.set(x, sandHeight(x, z) - 0.1, z);
     this.group.rotation.set(0, rotY, 0.035);
+    this.baseRotY = rotY;
     this.group.scale.setScalar(1.3);
 
     const bodyParts = [
@@ -191,9 +192,41 @@ export class Chest {
     this.peekTimer = 0;
   }
 
+  // Tap! Opens wide and throws out treasure (via onTreasure). Returns false if busy.
+  open() {
+    if (this.openTimer >= 0) {
+      this.wiggle();
+      return false;
+    }
+    this.openTimer = 0;
+    this.peekTimer = -1;
+    this.treasureDone = false;
+    this.material.uniforms.uFlash.value = 1;
+    this.squash.kick(-2.6);
+    return true;
+  }
+
+  wiggle() {
+    this.squash.kick(-1.8);
+    this.shake = 1;
+  }
+
+  // Centre of the opening, in world space.
+  mouthWorld(out) {
+    out.set(0, this.size.H + 0.15, 0.05);
+    return this.group.localToWorld(out);
+  }
+
   update(t, dt) {
+    this.shake = Math.max(0, (this.shake || 0) - dt * 1.6);
+    this.group.rotation.y = this.baseRotY + Math.sin(t * 32) * 0.07 * this.shake;
     if (this.openTimer >= 0) {
       this.openTimer += dt;
+      if (this.openTimer > 0.2 && !this.treasureDone) {
+        this.treasureDone = true;
+        this.onTreasure?.(this.mouthWorld(new THREE.Vector3()));
+      }
+      if (this.openTimer < 2.4 && this.onBubbles && Math.random() < dt * 14) this.onBubbles(this.gapWorld(new THREE.Vector3()), 1);
       this.lidSpring.target = this.openTimer < 2.6 ? -1.85 : 0;
       this.material.uniforms.uOpen.value = clamp(-this.lidSpring.value / 1.4, 0, 1);
       if (this.openTimer > 3.6) this.openTimer = -1;

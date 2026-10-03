@@ -184,3 +184,162 @@ test('a NaN or Inf pixel never blacks out the screen', async ({ page }, info) =>
   expect(stats.std).toBeGreaterThan(0.04);
   expect(errors).toEqual([]);
 });
+
+// ---------------------------------------------------------------- stage 3: interactions and sound
+
+async function startApp(page, query = '') {
+  const errors = await openApp(page, query);
+  const box = await page.locator('#start-bubble').boundingBox();
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForFunction(() => window.__aq.state.started);
+  await page.waitForTimeout(3600); // the dive and the buttons popping in
+  return errors;
+}
+
+const visibleFish = (page) => page.evaluate(() => window.__aq.fish().filter((f) => f.visible && f.x > 80 && f.x < innerWidth - 80 && f.y > 80 && f.y < innerHeight - 160));
+
+// A screen point in open water: away from every fish, and nothing else there either.
+async function emptyWater(page) {
+  return page.evaluate(() => {
+    const fish = window.__aq.fish();
+    for (let y = 120; y < innerHeight * 0.5; y += 30) {
+      for (let x = 160; x < innerWidth - 160; x += 30) {
+        if (fish.every((f) => Math.hypot(f.x - x, f.y - y) > 170) && window.__aq.whatIsAt(x, y) === 'water') return { x, y };
+      }
+    }
+    return { x: innerWidth / 2, y: 110 };
+  });
+}
+
+test('buttons are big, icon-only and react', async ({ page }, info) => {
+  const errors = await startApp(page);
+  for (const id of ['#btn-feed', '#btn-night']) {
+    const b = await page.locator(id).boundingBox();
+    expect(b.width).toBeGreaterThanOrEqual(96);
+  }
+  expect((await page.locator('#btn-sound').boundingBox()).width).toBeGreaterThanOrEqual(56);
+  expect(await page.evaluate(() => document.body.innerText.trim())).toBe('');
+  const feed = await page.locator('#btn-feed').boundingBox();
+  await page.touchscreen.tap(feed.x + feed.width / 2, feed.y + feed.height / 2);
+  await expect.poll(() => page.evaluate(() => window.__aq.app.world.food.flakes.length)).toBeGreaterThan(10);
+  await expect.poll(() => page.evaluate(() => window.__aq.app.world.food.eaten), { timeout: 15_000 }).toBeGreaterThan(2);
+  await shot(page, info, '20-feeding');
+  expect(errors).toEqual([]);
+});
+
+test('tapping a fish makes it do a happy trick', async ({ page }, info) => {
+  const errors = await startApp(page);
+  const [f] = await visibleFish(page);
+  await page.touchscreen.tap(f.x, f.y);
+  expect(await page.evaluate(() => window.__aq.app.interaction.last.type)).toBe('fish');
+  await page.waitForTimeout(250);
+  await shot(page, info, '21-fish-trick');
+  const state = await page.evaluate((id) => window.__aq.fish().find((q) => q.id === id).state, (await page.evaluate(() => window.__aq.app.interaction.last.id)));
+  expect(state).toBe('trick');
+  expect(errors).toEqual([]);
+});
+
+test('tapping open water: ripple, bubbles and curious fish', async ({ page }, info) => {
+  const errors = await startApp(page);
+  const spot = await emptyWater(page);
+  await page.touchscreen.tap(spot.x, spot.y);
+  expect(await page.evaluate(() => window.__aq.app.interaction.last.type)).toBe('water');
+  await page.waitForTimeout(300);
+  await shot(page, info, '22-water');
+  await expect.poll(() => page.evaluate(() => window.__aq.fish().some((f) => f.state === 'curious'))).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('the treasure chest opens and treasure rains down', async ({ page }, info) => {
+  const errors = await startApp(page);
+  const chest = await page.evaluate(() => {
+    const a = window.__aq.app;
+    const v = a.world.chest.group.position.clone();
+    v.y += 0.9;
+    v.project(a.core.camera);
+    return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight };
+  });
+  await page.touchscreen.tap(chest.x, chest.y);
+  expect(await page.evaluate(() => window.__aq.app.interaction.last.type)).toBe('chest');
+  await page.waitForTimeout(700);
+  await shot(page, info, '23-treasure');
+  expect(await page.evaluate(() => window.__aq.app.world.treasure.items.length)).toBeGreaterThan(10);
+  expect(errors).toEqual([]);
+});
+
+test('the crab dances when tapped', async ({ page }) => {
+  const errors = await startApp(page);
+  const crab = await page.evaluate(() => {
+    const a = window.__aq.app;
+    const v = a.world.crab.root.position.clone();
+    v.y += 0.45;
+    v.project(a.core.camera);
+    return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight };
+  });
+  await page.touchscreen.tap(crab.x, crab.y);
+  expect(await page.evaluate(() => window.__aq.app.interaction.last.type)).toBe('crab');
+  expect(await page.evaluate(() => window.__aq.app.world.crab.state)).toBe('dance');
+  expect(errors).toEqual([]);
+});
+
+test('night and mute are remembered', async ({ page }, info) => {
+  const errors = await startApp(page);
+  const night = await page.locator('#btn-night').boundingBox();
+  await page.touchscreen.tap(night.x + night.width / 2, night.y + night.height / 2);
+  const sound = await page.locator('#btn-sound').boundingBox();
+  await page.touchscreen.tap(sound.x + sound.width / 2, sound.y + sound.height / 2);
+  await page.waitForTimeout(3000);
+  await shot(page, info, '24-night-button');
+  await page.reload();
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => window.__aq.app.audio.muted)).toBe(true);
+  expect(await page.locator('#btn-night').getAttribute('class')).toContain('is-night');
+  expect(await page.locator('#btn-sound').getAttribute('class')).toContain('is-muted');
+  await page.evaluate(() => localStorage.clear());
+  expect(errors).toEqual([]);
+});
+
+test('two children can tap two fish at the same time', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'real multitouch needs CDP');
+  const errors = await startApp(page);
+  const fish = await visibleFish(page);
+  const a = fish[0];
+  const b = fish.find((f) => Math.hypot(f.x - a.x, f.y - a.y) > 180);
+  test.skip(!b, 'no two separate fish on screen');
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: a.x, y: a.y, id: 1 }, { x: b.x, y: b.y, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(100);
+  const states = await page.evaluate(([ia, ib]) => window.__aq.fish().filter((f) => f.id === ia || f.id === ib).map((f) => f.state), [a.id, b.id]);
+  expect(states.filter((s) => s === 'trick').length).toBe(2);
+  expect(errors).toEqual([]);
+});
+
+test('a finger gliding through the water leaves a trail that fish follow', async ({ page, browserName }, info) => {
+  test.skip(browserName !== 'chromium', 'touch drags need CDP');
+  const errors = await startApp(page);
+  const spot = await emptyWater(page);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: spot.x, y: spot.y, id: 1 }] });
+  let followed = false;
+  for (let i = 1; i <= 30; i++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: spot.x + Math.sin(i / 4) * 220, y: spot.y + i * 6, id: 1 }] });
+    await page.waitForTimeout(60);
+    if (!followed) followed = await page.evaluate(() => window.__aq.fish().some((f) => f.state === 'follow'));
+  }
+  await shot(page, info, '25-trail');
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  expect(followed).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('every sound is soft: no loud peaks, little treble', async ({ page }) => {
+  await openApp(page, '?autostart');
+  const results = await page.evaluate(() => window.__aq.app.audio.analyze());
+  console.log('sound analysis', JSON.stringify(results));
+  for (const [name, r] of Object.entries(results)) {
+    expect(r.peakDb, `${name} peak`).toBeLessThanOrEqual(-6);
+    expect(r.trebleRatio, `${name} treble`).toBeLessThan(0.12);
+  }
+});

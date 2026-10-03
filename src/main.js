@@ -12,6 +12,9 @@ import { blockBrowserGestures } from './input.js';
 import { installDebug } from './debug.js';
 import { registerServiceWorker } from './sw-client.js';
 import { addNanTest } from './debug.js';
+import { Interaction } from './interact.js';
+import { Hud } from './ui/hud.js';
+import { loadState } from './storage.js';
 
 blockBrowserGestures();
 audio.installUnlockListeners();
@@ -24,6 +27,42 @@ const app = { core, rig, state, audio, afterRender: null };
 
 const world = new World(core, rig);
 app.world = world;
+
+// ---------------------------------------------------------------- settings, touch, buttons
+
+const saved = loadState();
+audio.setVolume(saved.settings.volume);
+audio.setMuted(saved.settings.muted);
+if (saved.settings.night) {
+  setNight(true, true);
+  audio.setNight(true);
+}
+
+const interaction = new Interaction(app);
+app.interaction = interaction;
+const hud = new Hud({
+  onFeed: () => interaction.feed(),
+  onNight: () => hud.setNight(interaction.toggleNight()),
+  onSound: () => hud.setMuted(interaction.toggleSound()),
+});
+hud.setNight(saved.settings.night);
+hud.setMuted(saved.settings.muted);
+app.hud = hud;
+
+// happy little sounds from the world
+world.school.onEat = (fish, full) => {
+  audio.play('nom');
+  world.fx.love(fish.pos, full ? 6 : 2);
+  if (full) {
+    fish.trick();
+    audio.play('giggle', { pitch: 700 / fish.size }, 0.25);
+  }
+};
+world.onCrabEat = (p) => {
+  audio.play('nom', { gain: 0.12 });
+  world.fx.sparkles(p, 5, 0.6);
+};
+world.treasure.onBounce = (item) => audio.play('pling', { note: 7 + item.kind * 2 + Math.floor(Math.random() * 3), gain: 0.05, decay: 0.5 });
 
 const quality = new Quality({ device, flags, onChange: applyTier });
 app.quality = quality;
@@ -61,11 +100,15 @@ document.addEventListener('visibilitychange', () => {
 
 let time = 0;
 let fullscreenTries = 0;
+let fullscreenAt = -1e9;
 const start = new StartScreen({
-  // `activation` is true for pointerup/touchend, which iOS accepts for fullscreen.
+  // `activation` is true for pointerup/touchend, which iOS accepts for fullscreen. Both fire
+  // for one tap, so only one request per tap.
   onGesture(activation) {
     audio.unlock();
-    if (activation && fullscreenTries < 3 && !flags.autostart) {
+    const now = performance.now();
+    if (activation && fullscreenTries < 3 && !flags.autostart && now - fullscreenAt > 800) {
+      fullscreenAt = now;
       fullscreenTries = requestFullscreen() ? 3 : fullscreenTries + 1;
     }
   },
@@ -78,6 +121,9 @@ app.start = () => {
   if (state.started) return;
   state.started = true;
   rig.startDive();
+  audio.startAmbience();
+  audio.play('pop');
+  setTimeout(() => hud.show(), flags.autostart ? 0 : 2300);
 };
 
 // ---------------------------------------------------------------- loop
@@ -130,7 +176,11 @@ async function boot() {
   applyTier(quality.tier);
   rig.frame(window.innerWidth / window.innerHeight);
   if (flags.debugView === 'depth') core.finalPass.uniforms.uDebugDepth.value = 1;
-  if (flags.night) setNight(true, true);
+  if (flags.night) {
+    setNight(true, true);
+    audio.setNight(true);
+    hud.setNight(true);
+  }
   if (flags.nantest) addNanTest(core.scene);
   try {
     await Promise.race([

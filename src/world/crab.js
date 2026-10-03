@@ -247,7 +247,22 @@ export class Crab {
     this.targetX = nx;
   }
 
-  // Happy jump + claw clap (used by interactions later).
+  // A flake landed near the crab's path: scuttle over and eat it.
+  goEat(flake) {
+    if (this.state === 'dance' || this.goingToEat) return false;
+    this.goingToEat = flake;
+    this.targetX = Math.max(-3.8, Math.min(4.2, flake.pos.x));
+    this.state = 'walk';
+    this.stateTime = 0;
+    return true;
+  }
+
+  lookAt(point, seconds = 1.6) {
+    this.lookOverride = point.clone();
+    this.lookFor = seconds;
+  }
+
+  // Happy jump + claw clap.
   celebrate() {
     this.hop.kick(5);
     this.happy.kick(6);
@@ -261,14 +276,21 @@ export class Crab {
     if (this.state === 'walk') {
       const d = this.targetX - this.x;
       const dir = Math.sign(d);
-      this.speed = damp(this.speed, 0.85, 4, dt);
-      this.x += dir * this.speed * dt;
+      this.speed = damp(this.speed, this.goingToEat ? 1.4 : 0.85, 4, dt);
+      this.x += dir * Math.min(this.speed * dt, Math.abs(d));
       walking = 1;
       if (Math.abs(d) < 0.05) {
         this.state = 'idle';
         this.stateTime = 0;
         this.idleFor = 2 + Math.random() * 3.5;
         this.wave = Math.random() < 0.4 ? 1 : 0;
+        if (this.goingToEat) {
+          const flake = this.goingToEat;
+          this.goingToEat = null;
+          this.snapT = 0;
+          this.happy.kick(5);
+          this.onEat?.(flake);
+        }
       }
     } else if (this.state === 'idle') {
       this.speed = damp(this.speed, 0, 6, dt);
@@ -345,9 +367,13 @@ export class Crab {
       this.jaws[i].rotation.set(-open, 0, 0);
     }
 
-    // eyes follow the camera, or the crab's own target when walking
+    // eyes follow the camera, the crab's own target when walking, or whatever was tapped
     this.look.copy(camera.position);
     if (walking) this.look.x += (this.targetX - this.x) * 6;
+    if (this.lookFor > 0) {
+      this.lookFor -= dt;
+      this.look.copy(this.lookOverride);
+    }
     this.material.uniforms.uBlink.value = this.blink;
 
     this.root.updateMatrixWorld(true);

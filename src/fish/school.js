@@ -15,6 +15,9 @@ const Z_MIN = -6;
 const Z_MAX = 4;
 
 const _ndc = new THREE.Vector3();
+const _tmp = new THREE.Vector3();
+const _nose = new THREE.Vector3();
+const _right = new THREE.Vector3();
 const _b = { xMin: 0, xMax: 0, yMin: 0, yMax: 0 };
 
 export class School {
@@ -26,6 +29,9 @@ export class School {
     this.obstacles = obstacles; // [{x, y, z, r}]
     this.fish = [];
     this.night = false;
+    this.food = null; // set by World: flakes to chase
+    this.onEat = null; // (fish, full) => void
+    this.foodScan = 0;
     this.grid = flags.fishgrid ? (new URLSearchParams(location.search).get('fishgrid') || 'patterns') : null;
     if (this.grid) this.buildGrid(this.grid);
   }
@@ -167,7 +173,20 @@ export class School {
     const flat = Math.hypot(v.x, v.z);
     const heading = flat > 0.05 ? Math.atan2(-v.z, v.x) : f.heading;
     f.heading = heading + (Math.sin(f.wanderPhase * 0.9 + f.dna.seed) + 0.5 * Math.sin(f.wanderPhase * 2.3 + f.dna.seed * 0.7)) * 0.55;
-    if (f.state === 'wander') {
+    if (f.state === 'curious' || f.state === 'follow' || (f.state === 'food' && f.flake)) {
+      // swim to the point of interest, slowing down on arrival
+      const target = f.state === 'food' ? f.flake.pos : f.target;
+      const tb = this.boundsAt(target.z);
+      const dx = target.x - p.x;
+      const dy = Math.min(target.y, tb.yMax - 0.4) - p.y;
+      const dz = target.z - p.z;
+      const dist = Math.hypot(dx, dy, dz) + 1e-4;
+      const speed = f.cruise * (f.state === 'food' ? 2.0 : f.state === 'follow' ? 1.9 : 1.3);
+      const arrive = Math.min(dist / (f.state === 'food' ? 0.6 : 1.6), 1);
+      acc.x += ((dx / dist) * speed * arrive - v.x) * 2.6;
+      acc.y += ((dy / dist) * speed * arrive - v.y) * 2.6;
+      acc.z += ((dz / dist) * speed * arrive - v.z) * 2.6;
+    } else if (f.state === 'wander') {
       const cruise = f.cruise * (this.night ? 0.65 : 1) * (1 + f.spurt * 1.4);
       const dvy = Math.sin(f.wanderPhase * 0.7 + f.dna.seed * 1.3) * 0.22 * cruise;
       // mostly sideways swimming: a fish seen from the side is the cutest fish
@@ -182,12 +201,14 @@ export class School {
     // favourite depth and soft walls taken from what the camera sees
     const b = this.boundsAt(p.z);
     const floor = Math.max(b.yMin, sandHeight(p.x, p.z) + 0.9 + f.radius * 0.45);
-    const prefY = floor + 0.6 + (b.yMax - floor - 1.2) * P.depth;
-    acc.y += (prefY - p.y) * 0.25;
-    // each fish has a favourite stretch of the aquarium, so they spread out
-    const homeX = b.xMin + 2 + (b.xMax - b.xMin - 4) * P.home;
-    acc.x += (homeX - p.x) * 0.035;
-    acc.z += (P.homeZ - p.z) * 0.08;
+    if (f.state === 'wander' || f.state === 'gaze') {
+      const prefY = floor + 0.6 + (b.yMax - floor - 1.2) * P.depth;
+      acc.y += (prefY - p.y) * 0.25;
+      // each fish has a favourite stretch of the aquarium, so they spread out
+      const homeX = b.xMin + 2 + (b.xMax - b.xMin - 4) * P.home;
+      acc.x += (homeX - p.x) * 0.035;
+      acc.z += (P.homeZ - p.z) * 0.08;
+    }
     const m = 0.7 + f.radius * 0.6;
     if (p.x > b.xMax - m) acc.x -= (p.x - (b.xMax - m)) * 3.2;
     if (p.x < b.xMin + m) acc.x += (b.xMin + m - p.x) * 3.2;
@@ -249,6 +270,7 @@ export class School {
       }
       return;
     }
+    this.updateFood(dt);
     for (const f of fish) this.steer(f, t, dt, camera);
     for (const f of fish) f.integrate(t, dt, camera, night);
 
@@ -266,6 +288,86 @@ export class School {
       if (f) this.pushers[i].set(f.pos.x, f.pos.y, f.pos.z, f.radius * 1.3);
       else this.pushers[i].set(0, -100, 0, 0);
     }
+  }
+
+  // Hungry fish go for the nearest falling flake; eating happens at the nose.
+  updateFood(dt) {
+    const food = this.food;
+    if (!food) return;
+    const falling = food.falling;
+    if (!falling.length) return;
+    this.foodScan -= dt;
+    if (this.foodScan <= 0) {
+      this.foodScan = 0.25;
+      const claims = new Map();
+      for (const f of this.fish) if (f.state === 'food' && f.flake) claims.set(f.flake, (claims.get(f.flake) || 0) + 1);
+      for (const f of this.fish) {
+        if (f.busy || f.state === 'food' || f.fullFor > 0) continue;
+        let best = null;
+        let bestD = 16;
+        for (const fl of falling) {
+          const d = f.pos.distanceTo(fl.pos) + (claims.get(fl) || 0) * 3;
+          if (d < bestD) {
+            bestD = d;
+            best = fl;
+          }
+        }
+        if (best) {
+          f.seekFood(best);
+          claims.set(best, (claims.get(best) || 0) + 1);
+        }
+      }
+    }
+    for (const f of this.fish) {
+      if (f.state !== 'food' || !f.flake || f.flake.dead) continue;
+      f.nose(_nose);
+      if (_nose.distanceTo(f.flake.pos) < 0.5 * f.size + 0.15 && food.eat(f.flake)) {
+        const full = f.chomp();
+        this.onEat?.(f, full);
+      }
+    }
+  }
+
+  // A water tap: the nearest one or two fish come to have a look.
+  curious(point, count = 2) {
+    const free = this.fish.filter((f) => !f.busy && f.state !== 'food');
+    free.sort((a, b) => a.pos.distanceTo(point) / a.persona.curiosity - b.pos.distanceTo(point) / b.persona.curiosity);
+    free.slice(0, count).forEach((f) => {
+      if (f.pos.distanceTo(point) < 14) f.curious(point);
+    });
+  }
+
+  // A finger dragging through the water: the nearest fish follow it.
+  follow(point, count = 2) {
+    const free = this.fish.filter((f) => !f.busy && f.state !== 'food');
+    free.sort((a, b) => a.pos.distanceTo(point) - b.pos.distanceTo(point));
+    free.slice(0, count).forEach((f) => f.follow(point));
+  }
+
+  // Generous screen-space picking: small fingers, moving targets.
+  pick(clientX, clientY, camera, width, height) {
+    _right.setFromMatrixColumn(camera.matrixWorld, 0);
+    let best = null;
+    let bestScore = Infinity;
+    for (const f of this.fish) {
+      if (f.state === 'leave') continue;
+      _ndc.copy(f.pos).project(camera);
+      if (_ndc.z > 1) continue;
+      const sx = (_ndc.x * 0.5 + 0.5) * width;
+      const sy = (-_ndc.y * 0.5 + 0.5) * height;
+      _tmp.copy(_right).multiplyScalar(f.radius * 0.85).add(f.pos).project(camera);
+      const rpx = Math.abs(_tmp.x - _ndc.x) * 0.5 * width;
+      const hitR = Math.max(rpx * 1.15, 52);
+      const d = Math.hypot(clientX - sx, clientY - sy);
+      if (d < hitR) {
+        const score = d / hitR + _ndc.z * 0.05;
+        if (score < bestScore) {
+          bestScore = score;
+          best = f;
+        }
+      }
+    }
+    return best;
   }
 
   castShadows() {

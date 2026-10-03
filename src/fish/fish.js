@@ -6,7 +6,7 @@ import { buildFishGeometry } from './geometry.js';
 import { createFishMaterial } from './material.js';
 import { createPaint } from './paint.js';
 import { personality, patternColor } from './dna.js';
-import { clamp, damp, Spring } from '../util/math.js';
+import { clamp, damp, Spring, easeInOutCubic } from '../util/math.js';
 
 const geometryCache = new Map();
 export function fishGeometry(shape) {
@@ -15,8 +15,11 @@ export function fishGeometry(shape) {
 }
 
 const TEMPO = [1.0, 1.15, 0.8, 1.5]; // tail-beat tempo per shape
+const TRICKS = ['flip', 'roll', 'spin', 'jump'];
+const AXIS = { flip: new THREE.Vector3(0, 0, 1), roll: new THREE.Vector3(1, 0, 0), spin: new THREE.Vector3(0, 1, 0) };
 const _e = new THREE.Euler(0, 0, 0, 'YZX');
 const _q = new THREE.Quaternion();
+const _qt = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 
@@ -84,8 +87,75 @@ export class Fish {
     this.mouth = 0;
     this.prevSpeed = 0;
     this.onGone = null;
+    this.target = new THREE.Vector3();
+    this.trickIndex = Math.floor(Math.random() * TRICKS.length);
+    this.giggleT = 0;
+    this.chompT = 0;
+    this.fed = 0;
+    this.fullFor = 0;
+    this.bellyFor = 0;
   }
 
+  // ---------------------------------------------------------------- interactions
+
+  get busy() {
+    return this.state === 'trick' || this.state === 'leave' || this.state === 'enter';
+  }
+
+  // Tapped! A happy trick — a different one each time.
+  trick() {
+    const trick = TRICKS[this.trickIndex++ % TRICKS.length];
+    this.setState('trick', { trickName: trick, trickDur: trick === 'jump' ? 1.0 : 0.9, trickDir: Math.random() < 0.5 ? 1 : -1 });
+    if (trick === 'jump') this.vel.y = 3.4;
+    this.happy.target = 1;
+    this.eyePop.kick(3);
+    this.flash = 0.8;
+    this.giggleT = 0.9;
+    if (this.dna.shape === 3) this.puffFor = 1.6;
+    return trick;
+  }
+
+  curious(point) {
+    if (this.busy || this.state === 'food') return;
+    this.target.copy(point);
+    this.setState('curious', { until: 4.5 });
+  }
+
+  follow(point) {
+    if (this.busy || this.state === 'food') return;
+    this.target.copy(point);
+    if (this.state !== 'follow') this.setState('follow');
+    this.followSeen = 0;
+  }
+
+  seekFood(flake) {
+    if (this.busy) return;
+    this.flake = flake;
+    this.setState('food');
+  }
+
+  // Got a flake! Nom, a round happy belly, and after a few: a celebration.
+  chomp() {
+    this.chompT = 0.32;
+    this.fed++;
+    this.bellyFor = 1.4;
+    this.happy.kick(5);
+    this.happy.target = 0.6;
+    this.setState('wander');
+    if (this.fed >= 3) {
+      this.fed = 0;
+      this.fullFor = 18;
+      return true; // full and happy
+    }
+    return false;
+  }
+
+  // Nose position in world space (where flakes get eaten).
+  nose(out) {
+    return out.set(this.meta.len * 0.5 * this.size, 0, 0).applyQuaternion(this.mesh.quaternion).add(this.pos);
+  }
+
+  // `data` becomes plain properties on the fish — never use a method name as a key.
   setState(state, data = {}) {
     this.state = state;
     this.stateT = 0;
@@ -111,8 +181,25 @@ export class Fish {
       }
     }
 
+    if (this.state === 'curious') {
+      this.until -= dt;
+      if (this.until <= 0 || (this.stateT > 1 && this.pos.distanceTo(this.target) < 1.1 && this.stateT > 2.2)) this.setState('wander');
+    } else if (this.state === 'follow') {
+      this.followSeen += dt;
+      if (this.followSeen > 0.7) this.setState('wander');
+    } else if (this.state === 'food') {
+      if (!this.flake || this.flake.dead || this.flake.landed || this.stateT > 8) this.setState('wander');
+    } else if (this.state === 'trick') {
+      v.multiplyScalar(Math.exp(-dt * 1.2));
+      if (this.stateT > this.trickDur) {
+        this.setState('wander');
+        this.happy.target = 0;
+      }
+    }
+    this.fullFor = Math.max(0, this.fullFor - dt);
+
     v.addScaledVector(this.acc, dt);
-    const maxSpeed = this.cruise * 2.4;
+    const maxSpeed = this.cruise * (this.state === 'food' || this.state === 'follow' ? 3 : 2.4);
     let speed = v.length();
     if (speed > maxSpeed) {
       v.multiplyScalar(maxSpeed / speed);
@@ -137,6 +224,11 @@ export class Fish {
     this.roll = damp(this.roll, clamp(-this.yawRate * 0.2, -0.45, 0.45), 5, dt);
     _e.set(this.roll, this.yaw, this.pitch, 'YZX');
     this.mesh.quaternion.setFromEuler(_e);
+    if (this.state === 'trick' && AXIS[this.trickName]) {
+      const k = easeInOutCubic(clamp(this.stateT / this.trickDur, 0, 1));
+      _qt.setFromAxisAngle(AXIS[this.trickName], k * Math.PI * 2 * this.trickDir);
+      this.mesh.quaternion.multiply(_qt);
+    }
 
     // ---- swimming animation
     const def = this.meta.def;
@@ -165,8 +257,12 @@ export class Fish {
     }
 
     // ---- where the eyes look
-    if (this.state === 'gaze') {
+    if (this.state === 'gaze' || this.state === 'trick') {
       this.lookTarget.copy(camera.position);
+    } else if (this.state === 'curious' || this.state === 'follow') {
+      this.lookTarget.copy(this.target);
+    } else if (this.state === 'food' && this.flake) {
+      this.lookTarget.copy(this.flake.pos);
     } else {
       _v.copy(v).normalize().multiplyScalar(4).add(this.pos);
       _w.copy(camera.position).sub(this.pos).multiplyScalar(0.12);
@@ -202,9 +298,19 @@ export class Fish {
       this.puffFor -= dt;
       this.puff.target = this.puffFor > 0 ? 1 : 0;
     }
+    this.bellyFor = Math.max(0, this.bellyFor - dt);
+    if (this.dna.shape !== 3) this.puff.target = this.bellyFor > 0 ? 0.28 : 0;   // a round full belly
     const puff = Math.max(0, this.puff.update(dt));
     const happy = clamp(this.happy.update(dt), 0, 1);
-    this.happy.target = gazing * 0.3;
+    if (this.state !== 'trick') this.happy.target = Math.max(gazing * 0.3, this.happy.target * Math.exp(-dt * 1.5));
+    // mouth: giggling during tricks, open wide near food, a quick chomp
+    this.giggleT = Math.max(0, this.giggleT - dt);
+    this.chompT = Math.max(0, this.chompT - dt);
+    let mouth = 0;
+    if (this.giggleT > 0) mouth = 0.3 + 0.35 * Math.abs(Math.sin(t * 19));
+    if (this.state === 'food' && this.flake) mouth = clamp(1.3 - this.pos.distanceTo(this.flake.pos) / 3, 0, 0.85);
+    if (this.chompT > 0) mouth = Math.abs(Math.sin(this.chompT * 20)) * 0.8;
+    this.mouth = damp(this.mouth, mouth, 18, dt);
     const eyePop = this.eyePop.update(dt);
     this.flash *= Math.exp(-dt * 5);
     this.spurt *= Math.exp(-dt * 2.4);
