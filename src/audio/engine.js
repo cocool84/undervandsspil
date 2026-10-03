@@ -11,7 +11,7 @@ export const AMBIENCE_LEVEL = 0.125; // ambience bus gain, well under the effect
 // The parents' sea-sound slider (0..1, 0.5 = default) → ambience bus gain.
 const ambienceGain = (amount) => AMBIENCE_LEVEL * Math.pow(Math.max(amount, 0) / 0.5, 1.5);
 // minimum seconds between two sounds of the same kind (many little fingers…)
-const MIN_GAP = { bloop: 0.05, fishTune: 0.07, puffup: 0.3, nom: 0.08, pop: 0.05, puff: 0.08, clickclack: 0.12, boing: 0.12, tock: 0.04, sparkle: 0.1, pling: 0.03, splash: 0.2, whoosh: 0.3, chime: 0.3, treasure: 0.4, plop: 0.04, morph: 0.15, brush: 0.07, pour: 0.15, blink: 0.12, harp: 0.2, magic: 0.5, fanfare: 0.8, goodbye: 0.6 };
+const MIN_GAP = { bloop: 0.05, fishTune: 0.07, puffup: 0.3, nom: 0.08, pop: 0.05, puff: 0.08, clickclack: 0.12, boing: 0.12, tock: 0.04, sparkle: 0.1, pling: 0.03, splash: 0.2, whoosh: 0.3, chime: 0.3, treasure: 0.4, plop: 0.04, morph: 0.15, paintNote: 0.12, pour: 0.15, blink: 0.12, harp: 0.2, magic: 0.5, fanfare: 0.8, goodbye: 0.6, theme: 5 };
 
 export function buildChain(ctx, volume, output = ctx.destination) {
   const master = ctx.createGain();
@@ -139,6 +139,23 @@ export class AudioEngine {
     setTimeout(() => {
       this.voices--;
     }, (dur + delay) * 1000 + 50);
+  }
+
+  // Run fn as soon as the sound is really on (on iOS it may still be starting right after the
+  // first tap); give up quietly after a moment — a late jingle is worse than none.
+  whenRunning(fn, patience = 2000) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (ctx.state === 'running') {
+      fn();
+      return;
+    }
+    const until = performance.now() + patience;
+    const check = () => {
+      if (ctx.state === 'running' && performance.now() < until) fn();
+      if (ctx.state === 'running' || performance.now() >= until) ctx.removeEventListener('statechange', check);
+    };
+    ctx.addEventListener('statechange', check);
   }
 
   // iOS can suspend/interrupt the context at any time; any later gesture revives it.

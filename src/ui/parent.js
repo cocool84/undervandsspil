@@ -14,9 +14,60 @@ function make(tag, cls, parent, html = '') {
   return e;
 }
 
+// A big slider that follows a dragging finger. (The page blocks touchmove so it never
+// scrolls or zooms — which also stops the iPad's own range inputs from being dragged.)
+// onInput fires while dragging, onChange when the finger lets go.
+class Slider {
+  constructor(parent, value, onInput, onChange) {
+    this.el = make('div', 'p-slider', parent, '<div class="p-rail"><div class="p-track"><div class="p-fill"></div></div><div class="p-thumb"></div></div>');
+    this.el.setAttribute('role', 'slider');
+    this.el.setAttribute('aria-valuemin', '0');
+    this.el.setAttribute('aria-valuemax', '1');
+    this.rail = this.el.querySelector('.p-rail');
+    this.fill = this.el.querySelector('.p-fill');
+    this.thumb = this.el.querySelector('.p-thumb');
+    this.set(value);
+    this.el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.el.setPointerCapture?.(e.pointerId);
+      this.dragging = true;
+      this.el.classList.add('dragging');
+      this.follow(e, onInput);
+    });
+    this.el.addEventListener('pointermove', (e) => {
+      if (this.dragging) this.follow(e, onInput);
+    });
+    const end = () => {
+      if (!this.dragging) return;
+      this.dragging = false;
+      this.el.classList.remove('dragging');
+      onChange(this.value);
+    };
+    this.el.addEventListener('pointerup', end);
+    this.el.addEventListener('pointercancel', end);
+    this.el.addEventListener('lostpointercapture', end);
+  }
+
+  follow(e, onInput) {
+    const r = this.rail.getBoundingClientRect();
+    const v = Math.round(Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1) * 100) / 100;
+    if (v === this.value) return;
+    this.set(v);
+    onInput(v);
+  }
+
+  set(v) {
+    this.value = v;
+    this.fill.style.width = `${v * 100}%`;
+    this.thumb.style.left = `${v * 100}%`;
+    this.el.setAttribute('aria-valuenow', String(v));
+  }
+}
+
 export class ParentCorner {
-  constructor({ volume, ambience, onVolume, onAmbience, onDelete, onOpen, onSaveCopy, onLoadCopy }) {
-    this.handlers = { onVolume, onAmbience, onDelete, onOpen, onSaveCopy, onLoadCopy };
+  constructor({ volume, ambience, onVolume, onVolumeDone, onAmbience, onAmbienceDone, onDelete, onOpen, onSaveCopy, onLoadCopy }) {
+    this.handlers = { onVolume, onVolumeDone, onAmbience, onAmbienceDone, onDelete, onOpen, onSaveCopy, onLoadCopy };
 
     // the gear, with a progress ring
     this.gear = make('button', 'gear', document.body, `${ICONS.gear}<svg class="gear-ring" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46"/></svg>`);
@@ -32,21 +83,16 @@ export class ParentCorner {
     this.close.type = 'button';
     this.close.addEventListener('click', () => this.hide());
 
-    const row = (lo, hi, value, fn) => {
+    const row = (lo, hi, value, onInput, onChange) => {
       const r = make('div', 'p-row', card);
       make('span', 'p-icon', r, lo);
-      const input = make('input', 'p-range', r);
-      input.type = 'range';
-      input.min = '0';
-      input.max = '1';
-      input.step = '0.01';
-      input.value = String(value);
-      input.addEventListener('input', () => fn(parseFloat(input.value)));
+      const slider = new Slider(r, value, onInput, onChange);
       make('span', 'p-icon', r, hi);
-      return input;
+      return slider;
     };
-    this.volume = row(ICONS.speakerLow, ICONS.speakerHigh, volume, (v) => this.handlers.onVolume(v));
-    this.ambience = row(ICONS.seaLow, ICONS.seaHigh, ambience, (v) => this.handlers.onAmbience(v));
+    const h = this.handlers;
+    this.volume = row(ICONS.speakerLow, ICONS.speakerHigh, volume, (v) => h.onVolume(v), (v) => h.onVolumeDone?.(v));
+    this.ambience = row(ICONS.seaLow, ICONS.seaHigh, ambience, (v) => h.onAmbience(v), (v) => h.onAmbienceDone?.(v));
 
     const files = make('div', 'p-row p-files-row', card);
     this.save = make('button', 'p-save', files, ICONS.saveCopy);

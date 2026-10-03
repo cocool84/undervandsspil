@@ -76,15 +76,21 @@ const wipe = new BubbleWipe();
 const parent = new ParentCorner({
   volume: saved.settings.volume,
   ambience: saved.settings.ambience,
+  // while the finger drags: hear the new level now and then (a note that rises with it)
   onVolume: (v) => {
     audio.setVolume(v);
+    const now = performance.now();
+    if (now - (parent.volumeNoteAt ?? 0) > 260) {
+      parent.volumeNoteAt = now;
+      audio.play('pling', { note: 5 + Math.round(v * 5), gain: 0.07, decay: 0.4 });
+    }
+  },
+  onVolumeDone: (v) => {
     saveSettings({ volume: v });
-    audio.play('tock', { note: 9 });
+    audio.play('pling', { note: 5 + Math.round(v * 5), gain: 0.08, decay: 0.6 });
   },
-  onAmbience: (v) => {
-    audio.setAmbience(v);
-    saveSettings({ ambience: v });
-  },
+  onAmbience: (v) => audio.setAmbience(v),
+  onAmbienceDone: (v) => saveSettings({ ambience: v }),
   onDelete: () => {
     population.clearOwn();
     audio.play('chime', { up: false, gain: 0.07 });
@@ -294,6 +300,7 @@ app.start = () => {
   rig.startDive();
   audio.startAmbience();
   audio.play('pop');
+  audio.whenRunning(() => audio.play('theme', {}, 0.3)); // a cosy little waltz for the dive
   setTimeout(
     () => {
       hud.show();

@@ -120,6 +120,7 @@ ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst ve
   - **Drejning:** fisken vender sig næsten forfra ved øjne-trinnet.
 - **Nat og lyd:** dag/nat og lyd til/fra huskes til næste gang.
 - **Forældrehjørnet:** tandhjulet kræver 3 sekunders tryk. Der er skydere til lydstyrke og havlyd, gem/hent kopi og slet egne fisk med ✓/✗.
+  - **Skyderne er egne pointer-styrede komponenter** (`Slider` i `ui/parent.js`), ikke `<input type=range>`. Siden blokerer `touchmove` for at undgå zoom og scroll, og det forhindrer iPad'ens indbyggede skydere i at blive trukket (kun tryk virkede). Mens man trækker, høres en blød tone, der stiger med lydstyrken. Indstillingen gemmes, når fingeren slipper.
   - **Gem kopi:** iOS' delingsark ("Gem i Filer") eller en download.
   - **Hent kopi:** filen tjekkes felt for felt. Kun `data:image/jpeg|png` accepteres som maleri. Fisk, man ikke har i forvejen, svømmer hjem, og 25-grænsen gælder stadig. I `?fill`-tilstand er hent kopi slået fra.
 - **Polering:**
@@ -140,6 +141,8 @@ ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst ve
   - spilledåse
   - harpe
 - **Fisk:** hver fisk har sin egen stemme (store fisk synger dybere). Hurtige gentagne tryk giver kun én blød tone.
+- **Maling:** brugeren fandt det tidligere stø-sus ved hvert penselstrøg irriterende. I stedet spiller `paintNote` en blød, glasagtig tone højst hvert 0,3 s og først efter cirka 40 px fingerbevægelse. Tonerne vandrer op og ned i skalaen fra penselfarvens egen tone, så maling lyder som en langsom lille melodi. Støj må ikke bruges til maling.
+- **Temamelodi:** `theme` spiller en kort, hyggelig vals på cirka 5 s, når startboblen popper og kameraet dykker. Melodien ligger på boble-marimba med spilledåse en oktav over og bløde akkorder (C | G | Am | C), og den slutter med en harpe og bobler. Den startes via `audio.whenRunning()`, fordi lyden på iOS kan være ved at starte lige efter første tryk. Kommer lyden ikke i gang inden for 2 s, springes melodien over.
 - **Automatisk tjek:** `tests/aquarium.spec.mjs` → "every sound is soft". Målingen er A-vægtet med en lille højttalers bas-rolloff, se `src/audio/analysis.js`.
   - hver opskrift: peak ≤ −6 dBFS og diskantandel over 5 kHz < 0,12
   - hver effekt (undtagen `whoosh`) mindst **8 dB** over havlydens højeste øjeblik om dagen

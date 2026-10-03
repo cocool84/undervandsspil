@@ -364,19 +364,20 @@ export function morph(ctx, dest, t, { note = 6, gain = 0.11 } = {}) {
   return 0.65;
 }
 
-// Finger painting: a soft swish for every bit of stroke (faster strokes swish brighter).
-export function brush(ctx, dest, t, { gain = 0.62, speed = 0.5 } = {}) {
-  const dur = 0.13;
-  const s = noise(ctx, t, dur + 0.03);
-  const bp = ctx.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.Q.value = 0.9;
-  bp.frequency.setValueAtTime(560 + 480 * speed, t);
-  bp.frequency.exponentialRampToValueAtTime(480, t + dur);
+// Finger painting: now and then a soft, glassy note while the brush moves — together a slow
+// little tune (no noise: the old swish was tiring to listen to).
+export function paintNote(ctx, dest, t, { note = 7, gain = 0.06 } = {}) {
+  const out = soft(ctx, dest, 1800);
+  const f = noteFreq(note);
+  const o = osc(ctx, 'sine', f, t, 0.8);
   const g = ctx.createGain();
-  env(g, t, gain * (0.55 + 0.45 * speed), 0.025, dur);
-  s.connect(bp).connect(g).connect(soft(ctx, soft(ctx, dest, 1700), 1700)); // 24 dB/oct: a soft "shff", no hiss
-  return dur + 0.04;
+  env(g, t, gain, 0.02, 0.65);
+  o.connect(g).connect(out);
+  const o2 = osc(ctx, 'sine', f * 2, t, 0.35);
+  const g2 = ctx.createGain();
+  env(g2, t, gain * 0.12, 0.012, 0.25);
+  o2.connect(g2).connect(out);
+  return 0.85;
 }
 
 // Colour poured over the whole fish: glug-glug-bloop and a little splosh.
@@ -463,6 +464,45 @@ export function musicBox(ctx, dest, t, { note = 9, gain = 0.1 } = {}) {
   return 1.7;
 }
 
+// ---------------------------------------------------------------- the theme
+
+// The start of the game: a short, cosy waltz on the bubble marimba with a music-box twinkle
+// an octave up and soft chords underneath (C | G | Am | C), ending in a little rush of
+// bubbles as the camera dives into the aquarium.
+const semi = (s) => 261.63 * Math.pow(2, s / 12); // semitones from C4 (chords need B and F)
+export function theme(ctx, dest, t, { gain = 0.1 } = {}) {
+  const out = soft(ctx, dest, 2600);
+  const b = 0.36; // one beat
+  const melody = [
+    [0, 3, 1], [1, 5, 1], [2, 7, 1],
+    [3, 6, 1.5], [4.5, 7, 0.5], [5, 8, 1],
+    [6, 9, 1], [7, 8, 1], [8, 7, 1],
+    [9, 6, 0.5], [9.5, 7, 0.5], [10, 5, 2.5],
+  ];
+  for (const [beat, step, len] of melody) {
+    const tt = t + beat * b;
+    mallet(ctx, out, tt, noteFreq(step), gain, Math.max(0.3, len * b * 1.1));
+    musicBox(ctx, out, tt, { note: step + 5, gain: gain * 0.28 });
+  }
+  const pad = soft(ctx, dest, 1000);
+  [[0, [0, 4, 7]], [3, [-5, -1, 2]], [6, [-3, 0, 4]], [9, [0, 4, 7]]].forEach(([beat, chord], i) => {
+    const t0 = t + beat * b;
+    const t1 = t0 + (i === 3 ? 4.5 : 3) * b;
+    for (const s of chord) {
+      const o = osc(ctx, 'triangle', semi(s), t0, t1 - t0 + 0.6);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(gain * 0.22, t0 + 0.12);
+      g.gain.setValueAtTime(gain * 0.22, t1 - 0.1);
+      g.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.5);
+      o.connect(g).connect(pad);
+    }
+  });
+  harp(ctx, dest, t + 10.7 * b, { from: 8, count: 7, step: 0.05, gain: gain * 0.4 });
+  for (let i = 0; i < 4; i++) bloop(ctx, dest, t + (11.5 + i * 0.4) * b, { note: 9 + i, gain: gain * 0.5, short: true });
+  return 13 * b + 1.3;
+}
+
 // A fish swimming out of the aquarium: "bye-bye~" (it waves while it sings).
 export function goodbye(ctx, dest, t, { base = 6, gain = 0.09 } = {}) {
   const out = soft(ctx, dest, 2400);
@@ -473,4 +513,4 @@ export function goodbye(ctx, dest, t, { base = 6, gain = 0.09 } = {}) {
   return 1.0;
 }
 
-export const RECIPES = { bloop, pling, sparkle, fishTune, puffup, nom, splash, whoosh, chime, clickclack, boing, pop, puff, treasure, tock, plop, morph, brush, pour, blink, harp, magic, fanfare, goodbye, musicBox };
+export const RECIPES = { bloop, pling, sparkle, fishTune, puffup, nom, splash, whoosh, chime, clickclack, boing, pop, puff, treasure, tock, plop, morph, paintNote, pour, blink, harp, magic, fanfare, goodbye, musicBox, theme };

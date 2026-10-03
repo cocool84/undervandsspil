@@ -7,6 +7,7 @@ import { buildChain, AMBIENCE_LEVEL } from './engine.js';
 import { Ambience } from './ambience.js';
 
 const RATE = 44100;
+const LENGTH = { theme: 7 }; // seconds to render (default 2.4)
 const N = 4096; // ≈ 93 ms frames: "momentary" loudness
 const HOP = 1024;
 
@@ -129,8 +130,9 @@ export async function analyzeRecipes(volume = 0.7, recipes = RECIPES) {
   const results = {};
   for (const name of Object.keys(recipes)) {
     const play = (ctx, out) => recipes[name](ctx, buildChain(ctx, volume, out), 0.05, {});
-    const full = await renderOffline(2.4, play);
-    const high = await renderOffline(2.4, play, highpass5k);
+    const seconds = LENGTH[name] ?? 2.4;
+    const full = await renderOffline(seconds, play);
+    const high = await renderOffline(seconds, play, highpass5k);
     const loud = speakerLoudness(full);
     results[name] = {
       peakDb: loud.peakDb,

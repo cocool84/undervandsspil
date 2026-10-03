@@ -54,7 +54,10 @@ export class Factory {
     this.isOpen = false;
     this.leaving = null;
     this.magic = null;
-    this.brushT = 0;
+    this.noteAt = -1e9;
+    this.noteStep = 7;
+    this.noteX = 0;
+    this.noteY = 0;
     this.fingerAt = null;
     this.painter.setBase(this.draft.color);
     this.painter.loadStrokes(this.draft.strokes);
@@ -317,7 +320,7 @@ export class Factory {
         this.painter.strokeTo(e.pointerId, hit, this.draft.brush);
         this.fingerAt = hit.point.clone();
         this.draft.kind = 'design';
-        if (Math.random() < 0.35) this.app.audio.play('fishTune', { base: this.fish.voice, short: true, gain: 0.07 });
+        this.paintNote(e.clientX, e.clientY, true);
       }
     } else if (hit) {
       mode = 'tap';
@@ -338,13 +341,7 @@ export class Factory {
         this.painter.strokeTo(e.pointerId, hit, this.draft.brush);
         this.fingerAt = hit.point.clone();
         this.draft.kind = 'design';
-        // a soft swish while the brush moves (brighter when it moves fast)
-        const now = performance.now();
-        const speed = Math.min(Math.hypot(e.clientX - (p.px ?? e.clientX), e.clientY - (p.py ?? e.clientY)) / Math.max(now - (p.pt ?? now), 8) / 1.2, 1);
-        p.px = e.clientX;
-        p.py = e.clientY;
-        p.pt = now;
-        this.app.audio.play('brush', { speed });
+        this.paintNote(e.clientX, e.clientY, false);
       } else {
         this.painter.endStroke(e.pointerId);
       }
@@ -372,6 +369,25 @@ export class Factory {
       this.ui.nudge(true);
       this.saveSoon(800);
     }
+  }
+
+  // While the brush moves, a soft note now and then — never a stream: at most one every
+  // 0.3 s and only after the finger has travelled a little. The notes wander up and down the
+  // scale from the brush colour's own note, so painting sounds like a slow little tune.
+  paintNote(x, y, start) {
+    const now = performance.now();
+    if (start) {
+      if (now - this.noteAt < 300) return;
+      this.noteStep = 5 + (PAINT_COLORS.indexOf(this.draft.brush) % 5);
+    } else {
+      const far = Math.hypot(x - this.noteX, y - this.noteY) > 40;
+      if (now - this.noteAt < 300 || !far) return;
+      this.noteStep = Math.min(Math.max(this.noteStep + [-1, 1, 1, -1, 2, -2][Math.floor(Math.random() * 6)], 4), 10);
+    }
+    this.noteAt = now;
+    this.noteX = x;
+    this.noteY = y;
+    this.app.audio.play('paintNote', { note: this.noteStep, gain: 0.05 });
   }
 
   // ---------------------------------------------------------------- little effects

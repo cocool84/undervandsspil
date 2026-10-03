@@ -40,6 +40,10 @@ test('start screen, bubble pop and dive into the aquarium', async ({ page }, inf
   const stats = await page.evaluate(() => window.__aq.snapshotStats());
   expect(stats.std, 'frame should not be blank').toBeGreaterThan(0.04);
   expect(['running', 'suspended', 'interrupted']).toContain(await page.evaluate(() => window.__aq.audioState()));
+  // the little theme waltz plays for the dive (when the browser lets the sound run)
+  if ((await page.evaluate(() => window.__aq.audioState())) === 'running') {
+    expect(await page.evaluate(() => window.__aq.app.audio.played.theme ?? 0)).toBe(1);
+  }
   expect(errors).toEqual([]);
 });
 
@@ -352,7 +356,7 @@ test('every sound is soft: no loud peaks, little treble, clearly above the ambie
     expect(r.trebleRatio, `${name} treble`).toBeLessThan(0.12);
     // (the whoosh is only ever an accent under the day/night chime)
     if (name !== 'whoosh') expect(r.loudness - ambience.loudest, `${name} over ambience`).toBeGreaterThanOrEqual(8);
-    if (name !== 'whoosh' && name !== 'brush') expect(r.loudness - ambienceNight.loudest, `${name} over night ambience`).toBeGreaterThanOrEqual(5);
+    if (name !== 'whoosh') expect(r.loudness - ambienceNight.loudest, `${name} over night ambience`).toBeGreaterThanOrEqual(5);
   }
 });
 
@@ -396,13 +400,20 @@ test('fish factory: shape, paint, pattern, eyes, let it go — and it is saved',
     const cx = (a.left + a.right) / 2;
     const cy = (a.top + a.bottom) / 2;
     const cdp = await page.context().newCDPSession(page);
+    const strokeStart = Date.now();
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cx - 140, y: cy, id: 1 }] });
     for (let i = 0; i <= 28; i++) {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: cx - 140 + i * 10, y: cy + Math.sin(i * 0.6) * 18, id: 1 }] });
       await page.waitForTimeout(16);
     }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const strokeMs = Date.now() - strokeStart;
     expect(await page.evaluate(() => window.__aq.app.factory.painter.coverage())).toBeGreaterThan(0.01);
+    // painting sings a slow little tune: a few soft notes, never a stream (and no swish)
+    const played = await page.evaluate(() => window.__aq.app.audio.played);
+    expect(played.paintNote ?? 0).toBeGreaterThanOrEqual(1);
+    expect(played.paintNote ?? 0).toBeLessThanOrEqual(Math.floor(strokeMs / 300) + 1);
+    expect(played.brush).toBeUndefined();
   }
   await shot(page, info, '31-factory-paint');
   await tapEl(page, '.fac-next');
@@ -513,14 +524,11 @@ test("parents' corner: opens only after a 3-second press; delete brings the star
   expect(await page.evaluate(() => window.__aq.app.parent.isOpen)).toBe(true);
   expect(await page.evaluate(() => document.body.innerText.trim())).toBe('');
   await shot(page, info, '35-parents');
-  // volume
-  await page.evaluate(() => {
-    const r = document.querySelector('.p-range');
-    r.value = '0.35';
-    r.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  expect(await page.evaluate(() => window.__aq.app.audio.volume)).toBeCloseTo(0.35);
-  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).settings.volume, KEY)).toBeCloseTo(0.35);
+  // volume: a tap on the slider sets it too (dragging is tested on its own)
+  const vol = await page.locator('.p-slider').first().boundingBox();
+  await page.mouse.click(vol.x + 26 + (vol.width - 52) * 0.35, vol.y + vol.height / 2);
+  expect(await page.evaluate(() => window.__aq.app.audio.volume)).toBeCloseTo(0.35, 1);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).settings.volume, KEY)).toBeCloseTo(0.35, 1);
   // delete our own fish: ✓
   await page.locator('.p-delete').click();
   await page.locator('.p-yes').click();
@@ -673,4 +681,39 @@ test("parents' corner: save a copy of our fish as a file — and load it back", 
   await expect.poll(() => page.evaluate(() => window.__aq.app.population.own.length)).toBe(4);
   expect(await page.evaluate(() => window.__aq.app.population.own.find((d) => d.id === 'sneaky-1').paint)).toBeNull();
   expect([...errors, ...more]).toEqual([]);
+});
+
+test("parents' corner: the sliders follow a dragging finger", async ({ page, browserName }) => {
+  const errors = await startApp(page);
+  await openParents(page);
+  const box = await page.locator('.p-slider').first().boundingBox();
+  const y = box.y + box.height / 2;
+  const at = (k) => box.x + 26 + (box.width - 52) * k; // the rail inside the slider
+  const start = await page.evaluate(() => window.__aq.app.audio.volume);
+  const thumbX = at(start);
+  if (browserName === 'chromium') {
+    // a real touch drag, like a finger on the iPad (the page blocks touchmove scrolling)
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: thumbX, y, id: 1 }] });
+    for (let i = 1; i <= 12; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: thumbX + ((at(0.25) - thumbX) * i) / 12, y, id: 1 }] });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } else {
+    await page.mouse.move(thumbX, y);
+    await page.mouse.down();
+    await page.mouse.move(at(0.25), y, { steps: 12 });
+    await page.mouse.up();
+  }
+  expect(await page.evaluate(() => window.__aq.app.audio.volume)).toBeCloseTo(0.25, 1);
+  await expect.poll(() => page.evaluate((key) => JSON.parse(localStorage.getItem(key)).settings.volume, KEY)).toBeCloseTo(0.25, 1);
+  // the sea-sound slider too
+  const sea = await page.locator('.p-slider').nth(1).boundingBox();
+  await page.mouse.move(sea.x + 26 + (sea.width - 52) * 0.5, sea.y + sea.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(sea.x + 26 + (sea.width - 52) * 0.9, sea.y + sea.height / 2, { steps: 8 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.__aq.app.audio.ambienceAmount)).toBeCloseTo(0.9, 1);
+  expect(errors).toEqual([]);
 });
