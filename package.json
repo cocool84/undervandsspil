@@ -1,0 +1,16 @@
+{
+  "name": "undervandsspil",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Magisk 3D-undervandsakvarium til små børn (iPad/Safari PWA)",
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8765 --bind 127.0.0.1",
+    "test": "playwright test",
+    "icons": "node tools/make-icons.mjs",
+    "sw": "node tools/update-sw.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0"
+  }
+}
