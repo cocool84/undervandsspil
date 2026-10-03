@@ -107,6 +107,7 @@ ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst ve
   - Nedskalering ved under 55 fps i 1,5 s. Flere frames over 250 ms i træk giver 2 trin ned.
   - Budget: højst 90 draw calls og 250.000 trekanter.
   - Med 25 malede fisk er tallene 44 draw calls og cirka 191.000 trekanter.
+  - Målt på den rigtige iPad 10 (3. oktober 2026): `?fill=25` gav 60 fps på tier 2.
 - **Bestand:**
   - **8 startfisk** og **højst 25 fisk** i alt.
   - Når der mangler plads, svømmer først en startfisk ud, så den ældste tryllestavsfisk, så den ældste designede fisk. Egne fisk, der skubbes ud, slettes.
