@@ -531,3 +531,50 @@ test("parents' corner: opens only after a 3-second press; delete brings the star
   expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).fish.length, KEY)).toBe(0);
   expect([...errors, ...more]).toEqual([]);
 });
+
+// ---------------------------------------------------------------- stage 6: juice
+
+test('big bubbles can be popped — sometimes with a surprise inside', async ({ page }, info) => {
+  const errors = await startApp(page);
+  await page.evaluate(() => {
+    const bb = window.__aq.app.world.bigBubbles;
+    bb.spawn(bb.spots[2]);
+  });
+  await page.waitForTimeout(1600);
+  const [b] = await page.evaluate(() => window.__aq.bubbles());
+  expect(b).toBeTruthy();
+  await page.touchscreen.tap(b.x, b.y);
+  expect(await page.evaluate(() => window.__aq.app.interaction.last.type)).toBe('bubble');
+  expect(await page.evaluate(() => window.__aq.app.world.bigBubbles.popped)).toBe(1);
+  await page.waitForTimeout(150);
+  await shot(page, info, '40-bubble-pop');
+  expect(errors).toEqual([]);
+});
+
+test('tapping the sand: now and then a starfish peeks out and waves', async ({ page }, info) => {
+  const errors = await startApp(page);
+  const spot = await page.evaluate(() => {
+    for (let y = innerHeight - 190; y > innerHeight * 0.55; y -= 20) {
+      for (let x = 300; x < innerWidth - 300; x += 25) if (window.__aq.whatIsAt(x, y) === 'sand') return { x, y };
+    }
+    return null;
+  });
+  expect(spot).toBeTruthy();
+  await page.touchscreen.tap(spot.x, spot.y);
+  await page.waitForTimeout(200);
+  await page.touchscreen.tap(spot.x, spot.y);
+  expect(await page.evaluate(() => window.__aq.app.world.starfish.busy)).toBe(true);
+  await page.waitForTimeout(700);
+  await shot(page, info, '41-starfish');
+  await expect.poll(() => page.evaluate(() => window.__aq.app.world.starfish.busy), { timeout: 6000 }).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test('when nobody touches for a while, a fish comes to the glass to say hello', async ({ page }) => {
+  const errors = await startApp(page);
+  await page.evaluate(() => {
+    window.__aq.app.interaction.lastInputAt = performance.now() - 20000;
+  });
+  await expect.poll(() => page.evaluate(() => window.__aq.app.world.school.fish.some((f) => f.state === 'curious' && Math.abs(f.target.z - 2.8) < 0.01)), { timeout: 4000 }).toBe(true);
+  expect(errors).toEqual([]);
+});

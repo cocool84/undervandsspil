@@ -276,9 +276,9 @@ export function boing(ctx, dest, t, { gain = 0.15, base = 294 } = {}) {
 }
 
 // Bubble pop (start bubble).
-export function pop(ctx, dest, t, { gain = 0.22 } = {}) {
-  const o = osc(ctx, 'sine', 520, t, 0.1);
-  o.frequency.exponentialRampToValueAtTime(1150, t + 0.035);
+export function pop(ctx, dest, t, { gain = 0.22, pitch = 1 } = {}) {
+  const o = osc(ctx, 'sine', 520 * pitch, t, 0.1);
+  o.frequency.exponentialRampToValueAtTime(1150 * pitch, t + 0.035);
   const g = ctx.createGain();
   env(g, t, gain, 0.003, 0.07);
   o.connect(g).connect(dest);

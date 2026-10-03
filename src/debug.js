@@ -26,6 +26,7 @@ export function installDebug(app) {
     },
     audioState: () => app.audio.state,
     fish: () => app.world.school.screenInfo(core.camera, window.innerWidth, window.innerHeight),
+    bubbles: () => app.world.bigBubbles.screenInfo(core.camera, window.innerWidth, window.innerHeight),
     whatIsAt: (x, y) => app.interaction.classify(x, y).type,
     start: () => app.start(),
     app, // internals for debugging from the console

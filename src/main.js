@@ -131,6 +131,36 @@ world.school.onLeave = (fish) => {
   audio.play('goodbye', { base: fish.voice });
 };
 
+// Nobody has touched the aquarium for a while: a fish swims up to the glass to say hello.
+let visit = null;
+let lastVisit = -1e9;
+function idleVisit(now) {
+  if (!state.started || app.view !== 'aquarium' || app.busy) return;
+  if (!visit && now - interaction.lastInputAt > 14000 && now - lastVisit > 16000) {
+    lastVisit = now;
+    const free = world.school.fish.filter((f) => f.state === 'wander');
+    if (!free.length) return;
+    const f = free[Math.floor(Math.random() * free.length)];
+    const b = world.school.boundsAt(2.8);
+    f.curious(new THREE.Vector3(b.xMin + 3 + Math.random() * (b.xMax - b.xMin - 6), b.yMin + (b.yMax - b.yMin) * 0.45, 2.8));
+    f.until = 8;
+    visit = f;
+  }
+  if (visit) {
+    const f = visit;
+    if (f.state !== 'curious' || !world.school.fish.includes(f)) {
+      visit = null;
+    } else if (f.pos.distanceTo(f.target) < 1.3) {
+      const facingRight = Math.cos(f.yaw) > 0;
+      f.setState('gaze', { gazeYaw: facingRight ? -Math.PI / 2 + 0.5 : -Math.PI / 2 - 0.5, gazeFor: 3 });
+      f.happy.target = 0.9;
+      world.fx.love(f.pos, 3);
+      audio.play('fishTune', { trick: 'roll', base: f.voice, gain: 0.08 });
+      visit = null;
+    }
+  }
+}
+
 // ---------------------------------------------------------------- aquarium ⇄ fish factory
 
 app.openFactory = () => {
@@ -281,6 +311,7 @@ function loop(now) {
   } else {
     rig.update(time, dt);
     world.update(time, dt, core.camera);
+    idleVisit(now);
   }
 
   // Behind the start bubble the reef is dreamy and soft; it sharpens during the dive.

@@ -13,6 +13,7 @@ const _d = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _hit = new THREE.Vector3();
+const _col = new THREE.Color();
 
 export class Interaction {
   constructor(app) {
@@ -21,6 +22,8 @@ export class Interaction {
     this.touchCursor = 0;
     this.taps = 0;
     this.last = null; // what the last tap hit (for tests)
+    this.lastInputAt = performance.now();
+    this.sandTaps = 0;
     const canvas = app.core.renderer.domElement;
     canvas.addEventListener('pointerdown', (e) => this.down(e), { passive: false });
     window.addEventListener('pointermove', (e) => this.move(e), { passive: false });
@@ -38,8 +41,9 @@ export class Interaction {
 
   down(e) {
     if (e.cancelable) e.preventDefault();
+    this.lastInputAt = performance.now();
     if (!this.enabled) return;
-    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, trail: 0, ripple: 0, touch: 0 });
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, trail: 0, ripple: 0, touch: 0, count: 0 });
     this.tap(e.clientX, e.clientY);
   }
 
@@ -132,6 +136,8 @@ export class Interaction {
     const { rig, world, core } = this.app;
     const [nx, ny] = this.ndc(cx, cy);
     rig.screenRay(nx, ny, _o, _d);
+    const bubble = world.bigBubbles.pick(cx, cy, core.camera, window.innerWidth, window.innerHeight);
+    if (bubble) return { type: 'bubble', bubble };
     const fish = world.school.pick(cx, cy, core.camera, window.innerWidth, window.innerHeight);
     if (fish) return { type: 'fish', fish };
     const hit = this.pickObject(_o, _d);
@@ -150,6 +156,11 @@ export class Interaction {
     this.taps++;
     const what = this.classify(cx, cy);
     rig.screenRay(nx, ny, _o, _d);
+
+    if (what.bubble) {
+      this.popBubble(what.bubble, u, v, time);
+      return;
+    }
 
     const fish = what.fish;
     if (fish) {
@@ -185,6 +196,12 @@ export class Interaction {
       world.bubbles.burst(_hit.x, _hit.y + 0.2, _hit.z, 4, 0.3, 0.04, 0.1);
       audio.play('puff');
       this.pushTouch(_hit);
+      // now and then a starfish peeks out of the sand and waves (the 2nd tap, then every 3rd)
+      this.sandTaps++;
+      if (this.sandTaps % 3 === 2 && _hit.z > -4 && world.starfish.peek(_hit.x, _hit.z, core.camera)) {
+        audio.play('fishTune', { trick: 'jump', base: 8, gain: 0.08 }, 0.15);
+        world.fx.sparkles(_hit.clone().setY(_hit.y + 0.6), 6, 0.8);
+      }
       this.last = { type: 'sand' };
       return;
     }
@@ -259,19 +276,46 @@ export class Interaction {
     this.pushTouch(point);
   }
 
-  // A finger gliding through the water leaves a glittering trail and fish follow it.
+  // Pop! A big bubble bursts into droplets — and now and then there is a surprise inside.
+  popBubble(b, u, v, time) {
+    const { world, core, audio } = this.app;
+    const at = b.at;
+    world.bigBubbles.pop(b);
+    core.finalPass.addRipple(u, v, time, 0.6);
+    world.fx.ring(at, '#e6fdff', b.radius * 1.6);
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      world.fx.spawn(SHAPE.DOT, at.x + Math.cos(a) * b.radius, at.y + Math.sin(a) * b.radius, at.z, { vx: Math.cos(a) * 2.2, vy: Math.sin(a) * 2.2, life: 0.6, size: 0.16, drag: 3, gravity: -1.5, color: '#dff9ff' });
+    }
+    world.bubbles.burst(at.x, at.y, at.z, 6, 0.25, 0.04, 0.09);
+    audio.play('pop', { pitch: 1.25 / b.size, gain: 0.2 });
+    const surprise = world.bigBubbles.popped % 3;
+    if (surprise === 1) world.fx.love(at, 3);
+    else if (surprise === 2) world.fx.sparkles(at, 10, 1.0, '#fff2b0');
+    if (surprise) audio.play('sparkle', { from: 9, count: 4, gain: 0.04 }, 0.08);
+    this.pushTouch(at);
+    this.last = { type: 'bubble' };
+  }
+
+  // A finger gliding through the water leaves a glittering rainbow trail that plays little
+  // notes (higher up, higher notes) — and fish follow it.
   drag(cx, cy, p, now) {
     const { rig, world, core, audio } = this.app;
     const [nx, ny] = this.ndc(cx, cy);
     rig.screenToPlaneZ(nx, ny, 1.5, _p);
-    world.fx.spawn(SHAPE.SPARKLE, _p.x, _p.y, _p.z, { vy: 0.4, life: 0.8, size: 0.26, color: '#fff2b0' });
+    const hue = (now * 0.00025) % 1;
+    for (let k = 0; k < 3; k++) {
+      world.fx.spawn(SHAPE.SPARKLE, _p.x + (Math.random() - 0.5) * 0.4, _p.y + (Math.random() - 0.5) * 0.4, _p.z, { vy: 0.2 + Math.random() * 0.5, life: 1.2, size: 0.4 + Math.random() * 0.12, color: _col.setHSL((hue + k * 0.07) % 1, 0.9, 0.72) });
+    }
+    world.fx.spawn(SHAPE.DOT, _p.x, _p.y, _p.z, { life: 0.8, size: 0.55, drag: 2, color: _col.setHSL(hue, 0.8, 0.75) });
+    if (++p.count % 2 === 0) world.fx.spawn(SHAPE.STAR, _p.x, _p.y, _p.z, { vy: -0.3, gravity: -0.5, life: 1.6, size: 0.4, spin: 3, drag: 1.5, color: _col.setHSL(hue, 0.85, 0.65) });
     world.bubbles.spawn(_p.x, _p.y, _p.z, 0.05 + Math.random() * 0.06, 1.2, 0.06);
     world.school.follow(_p.clone());
     if (U.uNight.value > 0.5) world.fx.glowDots(_p, 2);
     if (now - p.ripple > 160) {
       p.ripple = now;
       core.finalPass.addRipple(cx / window.innerWidth, 1 - cy / window.innerHeight, U.uTime.value, 0.35);
-      audio.play('bloop', { note: 14 + Math.floor(Math.random() * 4), gain: 0.05, short: true });
+      audio.play('pling', { note: 5 + Math.round((1 - cy / window.innerHeight) * 7), gain: 0.045, decay: 0.45 });
     }
     if (now - p.touch > 200) {
       p.touch = now;

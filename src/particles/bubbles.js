@@ -143,12 +143,23 @@ export class Bubbles {
     return [this.depthMesh, this.mesh];
   }
 
-  spawn(x, y, z, size = 0.12, speed = 1.3, wobble = 0.08) {
+  spawn(x, y, z, size = 0.12, speed = 1.3, wobble = 0.08, seed = Math.random()) {
     const i = this.cursor;
     this.cursor = (this.cursor + 1) % MAX;
     this.aStart.setXYZW(i, x, y, z, U.uTime.value);
-    this.aParams.setXYZW(i, size, speed, wobble, Math.random());
+    this.aParams.setXYZW(i, size, speed, wobble, seed);
     this.dirty = true;
+    return { index: i, birth: this.aStart.getW(i) }; // as stored (float32), so isAlive can compare
+  }
+
+  // Pop a bubble before it reaches the surface.
+  kill(i) {
+    this.aStart.setW(i, -1000);
+    this.dirty = true;
+  }
+
+  isAlive(i, birth) {
+    return this.aStart.getW(i) === birth;
   }
 
   burst(x, y, z, count, spread = 0.3, sizeMin = 0.06, sizeMax = 0.2) {

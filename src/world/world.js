@@ -15,6 +15,8 @@ import { createCorals } from './corals.js';
 import { Chest } from './chest.js';
 import { Crab } from './crab.js';
 import { Jellyfish } from './jellyfish.js';
+import { Starfish } from './starfish.js';
+import { BigBubbles } from './bigbubbles.js';
 import { Plankton } from '../particles/plankton.js';
 import { Bubbles } from '../particles/bubbles.js';
 import { Shadows } from '../particles/shadows.js';
@@ -74,6 +76,10 @@ export class World {
     this.food = new Food();
     this.treasure = new Treasure(this.fx);
     scene.add(...this.fx.objects, this.food.mesh, ...this.treasure.objects);
+    this.starfish = new Starfish();
+    scene.add(this.starfish.mesh);
+    // big bubbles to pop rise from the sand near the front
+    this.bigBubbles = new BigBubbles(this.bubbles, [[-6.2, 1.6], [-3.4, 2.8], [0.2, 3.0], [4.4, 2.4], [7.0, 1.2], [2.0, 0.9]]);
     this.school.food = this.food;
     this.chest.onTreasure = (p) => {
       this.treasure.burst(p, 22);
@@ -151,6 +157,8 @@ export class World {
     this.shadows.add(c.x, c.y + 0.3, c.z, 1.5, 1.1, 0, 0.45);
     this.shadows.end();
     this.jellies.update(t, dt);
+    this.starfish.update(dt);
+    this.bigBubbles.update(dt);
     this.bubbles.update();
     const bh = this.core.renderer.getDrawingBufferSize(_v).y;
     this.plankton.update(camera, bh, this.core.renderer.getPixelRatio());
