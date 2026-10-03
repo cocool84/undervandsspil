@@ -11,6 +11,12 @@ export class Population {
   constructor(school) {
     this.school = school;
     this.own = [];
+    this.ephemeral = false; // test fish (?fill): never saved
+  }
+
+  save() {
+    this.saving = this.ephemeral ? Promise.resolve(true) : saveFish(this.own);
+    return this.saving;
   }
 
   get starterCount() {
@@ -42,7 +48,7 @@ export class Population {
       this.sendAway((f) => f.dna.id === victim.id);
     }
     this.syncStarters();
-    this.saving = saveFish(this.own);
+    this.save();
     return this.school.add(dna, { spawn: 'splash', delay });
   }
 
@@ -52,7 +58,28 @@ export class Population {
     this.own = [];
     this.sendAway((f) => ids.has(f.dna.id));
     this.syncStarters();
-    this.saving = saveFish([]);
+    this.save();
+  }
+
+  // Fish from a saved copy come (back) home: the ones we do not have yet swim in. Returns
+  // how many were new.
+  adopt(list) {
+    const have = new Set(this.own.map((d) => d.id));
+    const fresh = list.filter((d) => !have.has(d.id));
+    if (!fresh.length) return 0;
+    this.own.push(...fresh);
+    this.own.sort((a, b) => a.born - b.born);
+    const out = new Set();
+    while (this.own.length > MAX_FISH) {
+      const victim = this.oldest('wand') ?? this.oldest('design') ?? this.own[0];
+      this.own.splice(this.own.indexOf(victim), 1);
+      out.add(victim.id);
+    }
+    this.sendAway((f) => out.has(f.dna.id));
+    this.syncStarters();
+    for (const d of fresh) if (!out.has(d.id)) this.school.add(d, { spawn: 'side' });
+    this.save();
+    return fresh.length;
   }
 
   oldest(kind) {

@@ -17,7 +17,9 @@ import { addNanTest } from './debug.js';
 import { Interaction } from './interact.js';
 import { Hud } from './ui/hud.js';
 import { loadState, saveSettings, requestPersistence } from './storage.js';
+import { backupFile, offerFile, readBackup } from './backup.js';
 import { Population } from './fish/population.js';
+import { testFish } from './fish/testfish.js';
 import { Factory } from './factory/factory.js';
 import { BubbleWipe } from './ui/transition.js';
 import { ParentCorner } from './ui/parent.js';
@@ -48,7 +50,12 @@ if (saved.settings.night) {
   setNight(true, true);
   audio.setNight(true);
 }
-if (!world.school.grid) population.init(saved.fish);
+if (flags.fill !== null) {
+  population.ephemeral = true; // ?fill: painted test fish instead of ours, never saved
+  population.init(testFish(flags.fill));
+} else if (!world.school.grid) {
+  population.init(saved.fish);
+}
 
 const interaction = new Interaction(app);
 app.interaction = interaction;
@@ -81,6 +88,25 @@ const parent = new ParentCorner({
   onDelete: () => {
     population.clearOwn();
     audio.play('chime', { up: false, gain: 0.07 });
+  },
+  // a copy of our own fish as a file (with ?fill the saved ones, not the test fish)
+  onSaveCopy: () => {
+    const fish = population.ephemeral ? loadState().fish : population.own;
+    offerFile(backupFile(fish)).then((how) => {
+      if (how !== 'cancelled') parent.feedback(parent.save, true);
+    });
+  },
+  // …and back again: the fish we do not have yet swim home
+  onLoadCopy: async (file) => {
+    const fish = file.size < 20_000_000 && !population.ephemeral ? readBackup(await file.text()) : null;
+    if (!fish || !fish.length) {
+      parent.feedback(parent.load, false);
+      audio.play('pling', { note: 4, gain: 0.06, decay: 0.4 });
+      return;
+    }
+    population.adopt(fish);
+    parent.feedback(parent.load, true);
+    audio.play('chime', { up: true, gain: 0.07 });
   },
 });
 app.parent = parent;

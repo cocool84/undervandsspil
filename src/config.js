@@ -19,6 +19,8 @@ export const flags = {
   autostart: params.has('autostart'),
   night: params.has('night'),
   nantest: params.has('nantest'),
+  // ?fill=N: N painted test fish instead of our own (never saved) — for measuring performance
+  fill: params.has('fill') ? Math.min(Math.max(Math.round(num('fill', 25)), 0), 25) : null,
 };
 
 export const device = (() => {

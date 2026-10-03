@@ -578,3 +578,99 @@ test('when nobody touches for a while, a fish comes to the glass to say hello', 
   await expect.poll(() => page.evaluate(() => window.__aq.app.world.school.fish.some((f) => f.state === 'curious' && Math.abs(f.target.z - 2.8) < 0.01)), { timeout: 4000 }).toBe(true);
   expect(errors).toEqual([]);
 });
+
+// ---------------------------------------------------------------- tools for parents and for measuring
+
+test('?fill=25 fills the aquarium with painted test fish — and saves nothing', async ({ page }, info) => {
+  const errors = await openApp(page, '?fill=25&autostart');
+  await page.waitForTimeout(1500);
+  const own = await page.evaluate(() => window.__aq.app.population.own.map((d) => ({ shape: d.shape, pattern: d.pattern, eyes: d.eyes, painted: /^data:image\/jpeg/.test(d.paint || '') })));
+  expect(own).toHaveLength(25);
+  expect(own.every((f) => f.painted)).toBe(true);
+  for (const k of ['shape', 'pattern', 'eyes']) expect(new Set(own.map((f) => f[k])).size).toBe(4);
+  expect(await page.evaluate(() => window.__aq.fish().length)).toBe(25);
+  const perf = await page.evaluate(() => window.__aq.perf());
+  console.log('fill=25 perf', JSON.stringify({ calls: perf.sceneCalls, tris: perf.sceneTriangles, tier: perf.tier }));
+  expect(perf.sceneCalls).toBeLessThanOrEqual(90);
+  expect(perf.sceneTriangles).toBeLessThanOrEqual(250_000);
+  await shot(page, info, '50-fill-25');
+  // even a fish from the factory is not written down in this mode
+  await page.evaluate(() => window.__aq.app.population.release({ id: 'new-fill', born: Date.now(), kind: 'design', shape: 0, color: '#ff5d8f', pattern: 0, eyes: 0, glow: true, seed: 3, paint: null }));
+  await page.evaluate(() => window.__aq.app.population.saving);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || '{"fish":[]}').fish.length, KEY)).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+async function openParents(page) {
+  const gear = await page.locator('.gear').boundingBox();
+  await page.mouse.move(gear.x + gear.width / 2, gear.y + gear.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(3300);
+  await page.mouse.up();
+  await page.waitForFunction(() => window.__aq.app.parent.isOpen);
+}
+
+test("parents' corner: save a copy of our fish as a file — and load it back", async ({ page }, info) => {
+  const errors = await openApp(page);
+  const tinyJpeg = await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 16;
+    c.height = 8;
+    const g = c.getContext('2d');
+    g.fillStyle = '#ff5d8f';
+    g.fillRect(0, 0, 16, 8);
+    return c.toDataURL('image/jpeg', 0.8);
+  });
+  await seedFish(page, ownFishDNA(3).map((f, i) => ({ ...f, paint: i === 0 ? tinyJpeg : null })));
+  await page.reload();
+  const more = await startApp(page);
+  await openParents(page);
+  expect(await page.evaluate(() => document.body.innerText.trim())).toBe('');
+  await shot(page, info, '51-parents-copies');
+
+  // save a copy: through the iPad's share sheet ("Save to Files") — stubbed here…
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: async ({ files }) => {
+        window.__shared = { name: files[0].name, type: files[0].type, text: await files[0].text() };
+      },
+    });
+  });
+  await page.locator('.p-save').click();
+  await page.waitForFunction(() => window.__shared);
+  const shared = await page.evaluate(() => window.__shared);
+  expect(shared.name).toMatch(/^akvariet-\d{4}-\d{2}-\d{2}\.json$/);
+  expect(shared.type).toBe('application/json');
+  const copy = JSON.parse(shared.text);
+  expect(copy.app).toBe('undervandsspil');
+  expect(copy.fish.map((f) => f.id)).toEqual(['test-design-0', 'test-design-1', 'test-design-2']);
+  expect(copy.fish[0].paint).toBe(tinyJpeg);
+  // …or, without a share sheet, as a download
+  await page.evaluate(() => Object.defineProperty(navigator, 'canShare', { configurable: true, value: undefined }));
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('.p-save').click()]);
+  expect(download.suggestedFilename()).toMatch(/^akvariet-.*\.json$/);
+
+  // delete our fish… and load the copy: they swim home again, painting and all
+  await page.locator('.p-delete').click();
+  await page.locator('.p-yes').click();
+  expect(await page.evaluate(() => window.__aq.app.population.own.length)).toBe(0);
+  await openParents(page);
+  await page.setInputFiles('.p-file', { name: 'akvariet.json', mimeType: 'application/json', buffer: Buffer.from(shared.text) });
+  await expect.poll(() => page.evaluate(() => window.__aq.app.population.own.length)).toBe(3);
+  await expect(page.locator('.p-load')).toHaveClass(/p-ok/);
+  expect(await page.evaluate(() => window.__aq.app.population.own[0].paint)).toBe(tinyJpeg);
+  await page.evaluate(() => window.__aq.app.population.saving);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).fish.length, KEY)).toBe(3);
+
+  // a file that is not ours is refused kindly (a little shake), and nothing changes
+  await page.setInputFiles('.p-file', { name: 'other.json', mimeType: 'application/json', buffer: Buffer.from('{"hello": "world"}') });
+  await expect(page.locator('.p-load')).toHaveClass(/p-nope/);
+  // a sneaky painting is left out, the rest of the fish is kept
+  const sneaky = JSON.stringify({ app: 'undervandsspil', v: 1, fish: [{ ...copy.fish[1], id: 'sneaky-1', paint: 'javascript:alert(1)' }] });
+  await page.setInputFiles('.p-file', { name: 'sneaky.json', mimeType: 'application/json', buffer: Buffer.from(sneaky) });
+  await expect.poll(() => page.evaluate(() => window.__aq.app.population.own.length)).toBe(4);
+  expect(await page.evaluate(() => window.__aq.app.population.own.find((d) => d.id === 'sneaky-1').paint)).toBeNull();
+  expect([...errors, ...more]).toEqual([]);
+});

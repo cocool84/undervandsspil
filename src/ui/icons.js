@@ -104,6 +104,21 @@ export function blobIcon(color) {
 
 // ---------------------------------------------------------------- steps, arrows, buttons
 
+// A blue folder (like the Files app) with a fish on it, and a round badge with an arrow:
+// down into the folder = save a copy, up out of it = load a copy.
+function folderIcon(save) {
+  const badge = save ? '#2fb85a' : '#ff9f3d';
+  const arrow = save ? 'M78 9v22M70 23l8 9 8-9' : 'M78 32V10M70 18l8-9 8 9';
+  return svg(
+    `<path d="M8 32c0-4 3-7 7-7h20l7 8h41c4 0 7 3 7 7v40c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#7cc6ff"/>
+     <path d="M8 44h82v35c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#4aa3f0"/>
+     <path d="M60 64c0 6-6 10-13 10-5 0-9-2-11-5l-8 5 2-10-2-10 8 5c2-3 6-5 11-5 7 0 13 4 13 10z" fill="#ffd23f" stroke="${OUT}" stroke-width="2.5" stroke-linejoin="round"/>
+     <circle cx="51" cy="61" r="2.6" fill="${OUT}"/>
+     <circle cx="78" cy="21" r="17" fill="${badge}" stroke="#fff" stroke-width="3.5"/>
+     <path d="${arrow}" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+  );
+}
+
 export const ICONS = {
   stepShape: svg(`<path d="${BODY.round}" fill="#fff" stroke="${OUT}" stroke-width="4" stroke-linejoin="round"/>${eyeDot(70, 45)}`),
   stepPaint: svg(
@@ -159,6 +174,8 @@ export const ICONS = {
   speakerHigh: svg(`<path d="M10 40h14l18-14v48L24 60H10z" fill="#fff"/><path d="M54 40q7 10 0 20M64 30q14 20 0 40M74 20q21 30 0 60" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>`),
   seaLow: svg(`<path d="M14 56q9-8 18 0t18 0 18 0 18 0" fill="none" stroke="#bff6ff" stroke-width="6" stroke-linecap="round"/>`),
   seaHigh: svg(`<path d="M10 36q10-9 20 0t20 0 20 0 20 0M10 54q10-9 20 0t20 0 20 0 20 0M10 72q10-9 20 0t20 0 20 0 20 0" fill="none" stroke="#bff6ff" stroke-width="6" stroke-linecap="round"/>`),
+  saveCopy: folderIcon(true),
+  loadCopy: folderIcon(false),
   deleteFish: svg(
     `<path d="M70 40c0 9-9 15-20 15-7 0-13-3-16-8l-14 8 4-15-4-15 14 8c3-5 9-8 16-8 11 0 20 6 20 15z" fill="#ffd23f" stroke="${OUT}" stroke-width="3"/>
      <path d="M30 62h40l-4 30H34z" fill="#fff" stroke="${OUT}" stroke-width="3"/><path d="M26 62h48" stroke="${OUT}" stroke-width="4" stroke-linecap="round"/><path d="M42 68v18M50 68v18M58 68v18" stroke="${OUT}" stroke-width="3" stroke-linecap="round"/>`,

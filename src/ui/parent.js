@@ -1,5 +1,6 @@
 // The parents' corner: a faint gear that opens only after a 3-second press (a ring fills up
-// meanwhile), with a volume slider, a sea-sound slider and "delete our own fish" (✓ / ✗).
+// meanwhile), with a volume slider, a sea-sound slider, "save a copy" / "load a copy" of our
+// own fish (a file for Files on the iPad) and "delete our own fish" (✓ / ✗).
 
 import { ICONS } from './icons.js';
 
@@ -14,8 +15,8 @@ function make(tag, cls, parent, html = '') {
 }
 
 export class ParentCorner {
-  constructor({ volume, ambience, onVolume, onAmbience, onDelete, onOpen }) {
-    this.handlers = { onVolume, onAmbience, onDelete, onOpen };
+  constructor({ volume, ambience, onVolume, onAmbience, onDelete, onOpen, onSaveCopy, onLoadCopy }) {
+    this.handlers = { onVolume, onAmbience, onDelete, onOpen, onSaveCopy, onLoadCopy };
 
     // the gear, with a progress ring
     this.gear = make('button', 'gear', document.body, `${ICONS.gear}<svg class="gear-ring" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46"/></svg>`);
@@ -46,6 +47,23 @@ export class ParentCorner {
     };
     this.volume = row(ICONS.speakerLow, ICONS.speakerHigh, volume, (v) => this.handlers.onVolume(v));
     this.ambience = row(ICONS.seaLow, ICONS.seaHigh, ambience, (v) => this.handlers.onAmbience(v));
+
+    const files = make('div', 'p-row p-files-row', card);
+    this.save = make('button', 'p-save', files, ICONS.saveCopy);
+    this.load = make('button', 'p-load', files, ICONS.loadCopy);
+    this.save.type = 'button';
+    this.load.type = 'button';
+    this.file = make('input', 'p-file', files);
+    this.file.type = 'file';
+    this.file.accept = 'application/json,.json';
+    // straight from the tap: the share sheet and the file picker both need the gesture
+    this.save.addEventListener('click', () => this.handlers.onSaveCopy?.());
+    this.load.addEventListener('click', () => this.file.click());
+    this.file.addEventListener('change', () => {
+      const f = this.file.files?.[0];
+      this.file.value = '';
+      if (f) this.handlers.onLoadCopy?.(f);
+    });
 
     const del = make('div', 'p-row p-delete-row', card);
     this.del = make('button', 'p-delete', del, ICONS.deleteFish);
@@ -80,6 +98,15 @@ export class ParentCorner {
   holdEnd() {
     clearTimeout(this.timer);
     this.gear.classList.remove('holding');
+  }
+
+  // A little thumbs-up (green glow) or a "no" shake on a button.
+  feedback(btn, ok) {
+    btn.classList.remove('p-ok', 'p-nope');
+    void btn.offsetWidth;
+    btn.classList.add(ok ? 'p-ok' : 'p-nope');
+    clearTimeout(btn.feedbackTimer);
+    btn.feedbackTimer = setTimeout(() => btn.classList.remove('p-ok', 'p-nope'), 1600);
   }
 
   setVisible(on) {
