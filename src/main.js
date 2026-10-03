@@ -11,6 +11,7 @@ import { audio } from './audio/engine.js';
 import { blockBrowserGestures } from './input.js';
 import { installDebug } from './debug.js';
 import { registerServiceWorker } from './sw-client.js';
+import { addNanTest } from './debug.js';
 
 blockBrowserGestures();
 audio.installUnlockListeners();
@@ -130,6 +131,7 @@ async function boot() {
   rig.frame(window.innerWidth / window.innerHeight);
   if (flags.debugView === 'depth') core.finalPass.uniforms.uDebugDepth.value = 1;
   if (flags.night) setNight(true, true);
+  if (flags.nantest) addNanTest(core.scene);
   try {
     await Promise.race([
       core.renderer.compileAsync(core.scene, core.camera),

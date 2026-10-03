@@ -39,13 +39,13 @@ void main() {
   float dist = max(-mv.z, 0.1);
   float coc = clamp(abs(dist - uFocus) / (uFocus * 0.55) - 0.22, 0.0, 1.6);
   float size = 0.03 + 0.05 * fract(aSeed.w * 7.13);
-  float grow = 1.0 + coc * 5.0;
-  gl_PointSize = max(size * uViewH / dist * grow, 1.0) * (1.0 + touchGlow * uNight);
+  float grow = 1.0 + min(coc, 0.8) * 4.0;
+  gl_PointSize = min(max(size * uViewH / dist * grow, 1.0) * (1.0 + touchGlow * uNight), 48.0 * uPixelRatio);
   float glowy = step(0.68, fract(aSeed.w * 3.7));
   vAlpha = (0.45 + 0.6 * fract(aSeed.z * 13.1)) / pow(grow, 1.25);
   vAlpha *= 0.65 + 0.35 * sin(uTime * (1.0 + aSeed.y * 2.0) + aSeed.x * 50.0);
   vAlpha *= 1.0 - fogFactor(dist) * 0.85;
-  vAlpha *= smoothstep(0.6, 2.0, dist);
+  vAlpha *= smoothstep(4.0, 9.0, dist);
   vGlow = glowy * uNight * (1.0 + touchGlow * 3.0);
   vSoft = clamp(coc, 0.0, 1.0);
   gl_Position = projectionMatrix * mv;
@@ -105,8 +105,9 @@ export class Plankton {
   }
 
   // drawing-buffer height and camera fov → pixels per world unit at distance 1
-  update(camera, bufferHeight) {
+  update(camera, bufferHeight, pixelRatio) {
     const fov = THREE.MathUtils.degToRad(camera.fov);
     this.material.uniforms.uViewH.value = bufferHeight / (2 * Math.tan(fov / 2));
+    this.material.uniforms.uPixelRatio.value = pixelRatio;
   }
 }

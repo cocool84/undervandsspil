@@ -174,3 +174,13 @@ test('night: glowing fish and jellyfish', async ({ page }, info) => {
   expect(stats.mean, 'night should be darker than day').toBeLessThan(0.35);
   expect(errors).toEqual([]);
 });
+
+test('a NaN or Inf pixel never blacks out the screen', async ({ page }, info) => {
+  const errors = await openApp(page, '?autostart&nantest');
+  await page.waitForTimeout(3000);
+  await shot(page, info, '14-nan-guard');
+  const stats = await page.evaluate(() => window.__aq.snapshotStats());
+  expect(stats.mean, 'screen must not go black').toBeGreaterThan(0.2);
+  expect(stats.std).toBeGreaterThan(0.04);
+  expect(errors).toEqual([]);
+});

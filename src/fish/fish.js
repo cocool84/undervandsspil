@@ -179,11 +179,12 @@ export class Fish {
     let rx = lx;
     let ry = ly;
     if (this.dna.eyes === 3) {
-      // wonky eyes wander about on their own
-      lx += 0.32 + Math.sin(t * 0.9 + this.dna.seed) * 0.25;
-      ly += 0.18;
-      rx -= 0.3 + Math.sin(t * 1.3 + 2 + this.dna.seed) * 0.2;
-      ry -= 0.25 + Math.cos(t * 0.7) * 0.15;
+      // googly eyes: each pupil rolls about on its own, so they look in different directions
+      const s = this.dna.seed;
+      lx = 0.55 * Math.sin(t * 1.7 + s);
+      ly = 0.5 * Math.cos(t * 1.3 + s * 0.7);
+      rx = 0.55 * Math.sin(t * 1.1 + 2 + s);
+      ry = -0.5 * Math.cos(t * 1.9 + s * 1.3);
     }
     const k = 1 - Math.exp(-dt * 9);
     this.look.x += (lx - this.look.x) * k;
@@ -215,11 +216,10 @@ export class Fish {
     u.uFinPhase.value = this.finPhase;
     u.uPuff.value = puff;
     u.uSquash.value.set(s, 1 / Math.sqrt(s), 1 / Math.sqrt(s));
-    const eb = this.dna.eyes === 0 ? 1.14 : 1.0;
-    if (this.dna.eyes === 3) u.uEyeScale.value.set(1.22 * eyePop, 0.86 * eyePop);
-    else u.uEyeScale.value.set(eb * eyePop, eb * eyePop);
+    const eb = this.dna.eyes === 0 ? 1.1 : this.dna.eyes === 3 ? 1.06 : 1.0;
+    u.uEyeScale.value.set(eb * eyePop, eb * eyePop);
     u.uBlink.value = blink;
-    u.uDrowsy.value = night ? 0.35 : 0;
+    u.uDrowsy.value = night ? 0.25 : 0;
     u.uLook.value.copy(this.look);
     u.uMouth.value = this.mouth;
     u.uHappy.value = happy;

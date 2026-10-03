@@ -112,6 +112,6 @@ export class World {
     this.jellies.update(t, dt);
     this.bubbles.update();
     const bh = this.core.renderer.getDrawingBufferSize(_v).y;
-    this.plankton.update(camera, bh);
+    this.plankton.update(camera, bh, this.core.renderer.getPixelRatio());
   }
 }

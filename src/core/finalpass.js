@@ -4,12 +4,13 @@
 
 import * as THREE from 'three';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { FULLSCREEN_VERT } from '../glsl/common.js';
+import { FULLSCREEN_VERT, GLSL_SANITIZE } from '../glsl/common.js';
 
 export const MAX_RIPPLES = 6;
 
 const FRAG = /* glsl */ `
 #include <packing>
+${GLSL_SANITIZE}
 uniform sampler2D tDiffuse;
 uniform sampler2D tDepth;
 uniform float uNear;
@@ -104,7 +105,7 @@ void main() {
   if (coc > 0.02) {
     vec2 px = 1.0 / uResolution;
     float radius = coc * uMaxBlur;
-    vec3 acc = texture2D(tDiffuse, uv).rgb;
+    vec3 acc = aqSafe(texture2D(tDiffuse, uv).rgb);
     float wsum = 1.0;
     for (int i = 0; i < 12; i++) {
       if (float(i) >= uTaps) break;
@@ -115,12 +116,12 @@ void main() {
       float sc = cocAt(suv) * uMaxBlur;
       // A neighbour only counts if its own blur reaches us, so sharp things don't smear.
       float w = clamp(sc - r + 1.0, 0.0, 1.0);
-      acc += texture2D(tDiffuse, suv).rgb * w;
+      acc += aqSafe(texture2D(tDiffuse, suv).rgb) * w;
       wsum += w;
     }
     col = acc / wsum;
   } else {
-    col = texture2D(tDiffuse, uv).rgb;
+    col = aqSafe(texture2D(tDiffuse, uv).rgb);
   }
 
   col += vec3(0.5, 0.85, 1.0) * crest * 0.16;

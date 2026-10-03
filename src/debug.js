@@ -1,5 +1,6 @@
 // Test hooks (window.__aq) and the ?debug overlay (fps, tier, draw calls).
 
+import * as THREE from 'three';
 import { flags } from './config.js';
 
 export function installDebug(app) {
@@ -76,4 +77,17 @@ export function installDebug(app) {
       }
     },
   };
+}
+
+// A small quad that outputs NaN (left half, sqrt of −1) and +Inf (right half) at runtime.
+// (x / x would be folded to 1 by fast-math compilers, so it is not a real NaN test.)
+export function addNanTest(scene) {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uZero: { value: 0 } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'uniform float uZero; varying vec2 vUv; void main() { float nan = sqrt(uZero - 1.0); float inf = 1.0 / uZero; gl_FragColor = vec4(vec3(vUv.x < 0.5 ? nan : inf), 1.0); }',
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 1.2), mat);
+  quad.position.set(-1.5, 6, 2);
+  scene.add(quad);
 }

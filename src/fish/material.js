@@ -127,9 +127,8 @@ vec3 drawEye(vec3 N) {
   float r = length(p);
   float aa = max(fwidth(r) * 1.5, 0.006);
   vec2 look = side > 0.0 ? uLook.xy : uLook.zw;
-  float irisR = 0.6;
-  if (uEyeType > 2.5) irisR = side > 0.0 ? 0.64 : 0.46;
-  if (uEyeType > 1.5 && uEyeType < 2.5) look.y += 0.35;   // happy eyes look up out of their smile
+  float irisR = uEyeType > 2.5 ? 0.5 : 0.6;               // googly eyes: smaller pupils that roll about
+  if (uEyeType > 1.5 && uEyeType < 2.5) look.y += 0.12;
   vec2 ip = p - look * 0.34;
   float ir = length(ip);
   vec3 sclera = mix(vec3(1.0), vec3(0.8, 0.86, 0.96), smoothstep(0.45, 1.0, r));
@@ -145,9 +144,9 @@ vec3 drawEye(vec3 N) {
   float top = 1.12;
   float bottom = -1.12;
   float arch = 0.0;
-  if (uEyeType > 0.5 && uEyeType < 1.5) { top = 0.2; bottom = -0.82; }   // sleepy
-  if (uEyeType > 1.5 && uEyeType < 2.5) { bottom = -0.45; arch = 0.85; } // happy: smiling ◠ eyes
-  top -= uDrowsy * 0.45;
+  if (uEyeType > 0.5 && uEyeType < 1.5) { top = 0.42; bottom = -0.86; }  // sleepy: heavy lids, still open
+  if (uEyeType > 1.5 && uEyeType < 2.5) { bottom = -0.66; arch = 0.5; }  // happy: smiling lower lid
+  top -= uDrowsy * 0.3;
   bottom = mix(bottom, -0.05, uHappy);
   arch = mix(arch, 0.5, uHappy);
   top = mix(top, -0.12, uBlink);
@@ -204,10 +203,10 @@ void main() {
     }
     if (fin) {
       float rays = 0.86 + 0.14 * sin((vPart < 1.5 ? vUv.y : vU) * 90.0);
-      alb = mix(alb, vec3(1.0), vPart > 2.5 ? 0.35 : 0.22) * rays;
+      alb = mix(alb, vec3(1.0), vPart > 2.5 ? 0.1 : 0.22) * rays;
     }
     col = softShade(alb, N, V, vWpos, 0.65, 0.55, 42.0, 0.5, 0.75);
-    if (fin) col += alb * (uKeyColor * max(dot(-N, uSunDir), 0.0) * 0.35 + 0.12);
+    if (fin) col += alb * (uKeyColor * max(dot(-N, uSunDir), 0.0) * 0.35 + (vPart > 2.5 ? 0.28 : 0.12));
     float glowMask = uPattern > 0.5 && uPattern < 2.5 ? pm : (uPattern > 2.5 ? 0.3 : 0.0);
     if (fin) glowMask = max(glowMask, vFin * 0.8);
     float pulse = 0.65 + 0.35 * sin(uTime * 2.2 + vU * 6.0);

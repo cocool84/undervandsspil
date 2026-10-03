@@ -21,7 +21,7 @@ export const SHAPE_DEFS = [
     dorsal: { from: 0.16, to: 0.74, height: 0.34, sweep: 0.35, exp: 0.6 },
     anal: { from: 0.56, to: 0.86, height: 0.22, sweep: 0.3, exp: 0.7 },
     pectoral: { at: 0.34, len: 0.34, width: 0.2 },
-    eye: { at: 0.2, up: 0.3, r: 0.2 },
+    eye: { at: 0.2, up: 0.3, r: 0.215 },
     mouthY: 0.16, waveK: 3.2, swimAmp: 0.15,
   },
   {
@@ -31,7 +31,7 @@ export const SHAPE_DEFS = [
     dorsal: { from: 0.22, to: 0.98, height: 0.2, sweep: 0.05, exp: 0.2 },
     anal: { from: 0.55, to: 0.98, height: 0.13, sweep: 0.05, exp: 0.25 },
     pectoral: { at: 0.2, len: 0.26, width: 0.14 },
-    eye: { at: 0.11, up: 0.32, r: 0.165 },
+    eye: { at: 0.12, up: 0.32, r: 0.175 },
     mouthY: 0.22, waveK: 6.0, swimAmp: 0.17,
   },
   {
@@ -41,7 +41,7 @@ export const SHAPE_DEFS = [
     dorsal: { from: 0.22, to: 0.82, height: 1.0, sweep: 0.8, exp: 0.55 },
     anal: { from: 0.36, to: 0.86, height: 0.92, sweep: 0.72, exp: 0.55 },
     pectoral: { at: 0.36, len: 0.26, width: 0.15 },
-    eye: { at: 0.22, up: 0.3, r: 0.19 },
+    eye: { at: 0.22, up: 0.3, r: 0.205 },
     mouthY: 0.12, waveK: 2.6, swimAmp: 0.1,
   },
   {
@@ -51,7 +51,7 @@ export const SHAPE_DEFS = [
     dorsal: { from: 0.66, to: 0.84, height: 0.17, sweep: 0.3, exp: 0.6 },
     anal: { from: 0.66, to: 0.84, height: 0.14, sweep: 0.3, exp: 0.6 },
     pectoral: { at: 0.42, len: 0.22, width: 0.17 },
-    eye: { at: 0.26, up: 0.38, r: 0.21 },
+    eye: { at: 0.26, up: 0.36, r: 0.22 },
     mouthY: 0.18, waveK: 2.0, swimAmp: 0.05, spikes: 64,
   },
 ];
@@ -228,7 +228,8 @@ export function buildFishGeometry(shapeIndex) {
     const Z = new THREE.Vector3(0.28, 0.14, side).normalize();
     const X = new THREE.Vector3(1, 0, 0).addScaledVector(Z, -Z.x).normalize();
     const Y = side > 0 ? new THREE.Vector3().crossVectors(Z, X) : new THREE.Vector3().crossVectors(X, Z);
-    const centre = new THREE.Vector3(xAt(te), ye, side * ze).addScaledVector(Z, -e.r * 0.38);
+    const centre = new THREE.Vector3(xAt(te), ye, side * ze).addScaledVector(Z, -e.r * 0.3);
+    const FLAT = 0.6; // dome height relative to its radius
     eyeCentres.push(centre);
     const dome = new THREE.SphereGeometry(1, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2);
     dome.rotateX(Math.PI / 2); // pole → +z (outward)
@@ -246,7 +247,7 @@ export function buildFishGeometry(shapeIndex) {
       const lx = src.getX(i);
       const ly = src.getY(i);
       const lz = src.getZ(i);
-      tmp.copy(centre).addScaledVector(X, lx * e.r).addScaledVector(Y, ly * e.r).addScaledVector(Z, lz * e.r);
+      tmp.copy(centre).addScaledVector(X, lx * e.r).addScaledVector(Y, ly * e.r).addScaledVector(Z, lz * e.r * FLAT);
       pos.push(tmp.x, tmp.y, tmp.z);
       uvs.push(te * BODY_U, 0.4);
       u.push(uAt(tmp.x));
@@ -258,7 +259,7 @@ export function buildFishGeometry(shapeIndex) {
     // exact sphere normals in the fish frame
     const gn = g.attributes.normal;
     for (let i = 0; i < n; i++) {
-      tmp.set(0, 0, 0).addScaledVector(X, nrm.getX(i)).addScaledVector(Y, nrm.getY(i)).addScaledVector(Z, nrm.getZ(i)).normalize();
+      tmp.set(0, 0, 0).addScaledVector(X, nrm.getX(i)).addScaledVector(Y, nrm.getY(i)).addScaledVector(Z, nrm.getZ(i) / FLAT).normalize();
       gn.setXYZ(i, tmp.x, tmp.y, tmp.z);
     }
     dome.dispose();

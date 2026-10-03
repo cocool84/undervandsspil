@@ -18,6 +18,7 @@ export const flags = {
   nosw: params.has('nosw'),
   autostart: params.has('autostart'),
   night: params.has('night'),
+  nantest: params.has('nantest'),
 };
 
 export const device = (() => {

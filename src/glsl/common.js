@@ -180,6 +180,13 @@ vec3 softShade(vec3 albedo, vec3 N, vec3 V, vec3 wpos, float wrap, float spec, f
 }
 `;
 
+// NaN fails every comparison and Inf fails the upper bound, so both become 0. Written
+// as a comparison + select (not isnan) so fast-math shader compilers cannot fold it away.
+export const GLSL_SANITIZE = /* glsl */ `
+float aqSafe(float x) { return (x >= 0.0 && x <= 60000.0) ? x : 0.0; }
+vec3 aqSafe(vec3 c) { return vec3(aqSafe(c.r), aqSafe(c.g), aqSafe(c.b)); }
+`;
+
 export const GLSL_BILLBOARD = /* glsl */ `
 vec3 camRight() { return vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]); }
 vec3 camUp() { return vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]); }

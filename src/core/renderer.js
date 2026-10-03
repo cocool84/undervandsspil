@@ -6,6 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { FinalPass } from './finalpass.js';
+import { GLSL_SANITIZE } from '../glsl/common.js';
 
 export function createCore(canvas) {
   const renderer = new THREE.WebGLRenderer({
@@ -42,6 +43,17 @@ export function createCore(canvas) {
   const renderPass = new RenderPass(scene, camera);
   const bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.5, 1.0);
   const finalPass = new FinalPass();
+  // A single NaN/Inf pixel must never be blurred across the whole screen by the bloom.
+  const hp = bloom.materialHighPassFilter;
+  const read = 'vec4 texel = texture2D( tDiffuse, vUv );';
+  if (hp.fragmentShader.includes(read)) {
+    hp.fragmentShader = hp.fragmentShader
+      .replace('void main() {', `${GLSL_SANITIZE}\nvoid main() {`)
+      .replace(read, 'vec4 texel = vec4( aqSafe( texture2D( tDiffuse, vUv ).rgb ), 1.0 );');
+    hp.needsUpdate = true;
+  } else {
+    console.warn('bloom high-pass shader changed; NaN guard not installed');
+  }
   composer.addPass(renderPass);
   composer.addPass(bloom);
   composer.addPass(finalPass);
