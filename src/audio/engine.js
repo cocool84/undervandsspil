@@ -11,7 +11,7 @@ export const AMBIENCE_LEVEL = 0.125; // ambience bus gain, well under the effect
 // The parents' sea-sound slider (0..1, 0.5 = default) → ambience bus gain.
 const ambienceGain = (amount) => AMBIENCE_LEVEL * Math.pow(Math.max(amount, 0) / 0.5, 1.5);
 // minimum seconds between two sounds of the same kind (many little fingers…)
-const MIN_GAP = { bloop: 0.05, fishTune: 0.07, puffup: 0.3, nom: 0.08, pop: 0.05, puff: 0.08, clickclack: 0.12, boing: 0.12, tock: 0.04, sparkle: 0.1, pling: 0.03, splash: 0.2, whoosh: 0.3, chime: 0.3, treasure: 0.4, plop: 0.04, morph: 0.15, paintNote: 0.12, pour: 0.15, blink: 0.12, harp: 0.2, magic: 0.5, fanfare: 0.8, goodbye: 0.6, theme: 5 };
+const MIN_GAP = { bloop: 0.05, fishTune: 0.07, puffup: 0.3, nom: 0.08, pop: 0.05, puff: 0.08, clickclack: 0.12, boing: 0.12, tock: 0.04, sparkle: 0.1, pling: 0.03, splash: 0.2, whoosh: 0.3, chime: 0.3, treasure: 0.4, plop: 0.04, morph: 0.15, paintNote: 0.12, pour: 0.15, blink: 0.12, harp: 0.2, magic: 0.5, fanfare: 0.8, goodbye: 0.6, theme: 5, animalTune: 0.07, spout: 0.4, bell: 0.5 };
 
 export function buildChain(ctx, volume, output = ctx.destination) {
   const master = ctx.createGain();
@@ -46,6 +46,7 @@ export class AudioEngine {
     this.last = {};
     this.played = {}; // how often each sound really played (for the tests)
     this.night = false;
+    this.scene = 'reef';
     try {
       // Play even when the device is switched to silent; the in-app button mutes.
       if (navigator.audioSession) navigator.audioSession.type = 'playback';
@@ -93,11 +94,18 @@ export class AudioEngine {
     if (!this.ambience) return;
     this.ambience.start();
     this.ambience.setNight(this.night);
+    this.ambience.setScene(this.scene);
   }
 
   setNight(on) {
     this.night = on;
     this.ambience?.setNight(on);
+  }
+
+  // Which aquarium we are in ('reef' | 'ocean'): far-away whales sing in the open sea.
+  setScene(kind) {
+    this.scene = kind;
+    this.ambience?.setScene(kind);
   }
 
   setMuted(m) {
@@ -176,6 +184,7 @@ export class AudioEngine {
       recipes: await analyzeRecipes(this.volume),
       ambience: await analyzeAmbience(this.volume),
       ambienceNight: await analyzeAmbience(this.volume, { night: true }),
+      ambienceSea: await analyzeAmbience(this.volume, { sea: true }),
     };
   }
 }

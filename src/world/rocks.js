@@ -39,17 +39,15 @@ void main() {
 }
 `;
 
-const ROCK_A = new THREE.Color('#9d8fb4');
-const ROCK_B = new THREE.Color('#b29a8c');
-const ROCK_DARK = new THREE.Color('#5e5878');
-const MOSS = new THREE.Color('#6fbf86');
-const MOSS_B = new THREE.Color('#9ccf6a');
+// rock, rock, dark underside, moss, moss
+const REEF_COLORS = ['#9d8fb4', '#b29a8c', '#5e5878', '#6fbf86', '#9ccf6a'];
 
 const _v = new THREE.Vector3();
 const _n = new THREE.Vector3();
 const _c = new THREE.Color();
 
-function colorize(geo, seed, mossAmount) {
+function colorize(geo, seed, mossAmount, palette) {
+  const [stoneA, stoneB, stoneDark, mossA, mossB] = palette;
   const pos = geo.attributes.position;
   const nrm = geo.attributes.normal;
   const colors = new Float32Array(pos.count * 3);
@@ -57,12 +55,12 @@ function colorize(geo, seed, mossAmount) {
     _v.fromBufferAttribute(pos, i);
     _n.fromBufferAttribute(nrm, i);
     const base = noise3(_v.x * 0.8 + seed, _v.y * 0.8, _v.z * 0.8) * 0.5 + 0.5;
-    _c.copy(ROCK_A).lerp(ROCK_B, base);
+    _c.copy(stoneA).lerp(stoneB, base);
     const low = THREE.MathUtils.smoothstep(_v.y, -0.6, 0.1);
-    _c.lerp(ROCK_DARK, (1 - low) * 0.45);
+    _c.lerp(stoneDark, (1 - low) * 0.45);
     const mossNoise = noise3(_v.x * 2.2 - seed, _v.y * 2.2, _v.z * 2.2 + seed) * 0.25;
     const moss = THREE.MathUtils.smoothstep(_n.y + mossNoise, 0.45, 0.75) * mossAmount;
-    _c.lerp(base > 0.5 ? MOSS : MOSS_B, moss * 0.85);
+    _c.lerp(base > 0.5 ? mossA : mossB, moss * 0.85);
     colors[i * 3] = _c.r;
     colors[i * 3 + 1] = _c.g;
     colors[i * 3 + 2] = _c.b;
@@ -70,7 +68,7 @@ function colorize(geo, seed, mossAmount) {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
 
-function rockGeometry(detail, seed, mossAmount = 1) {
+function rockGeometry(detail, seed, mossAmount, palette) {
   let g = new THREE.IcosahedronGeometry(1, detail);
   g.deleteAttribute('normal');
   g.deleteAttribute('uv');
@@ -86,11 +84,11 @@ function rockGeometry(detail, seed, mossAmount = 1) {
     pos.setXYZ(i, _v.x, _v.y, _v.z);
   }
   g.computeVertexNormals();
-  colorize(g, s, mossAmount);
+  colorize(g, s, mossAmount, palette);
   return g;
 }
 
-function archGeometry(seed) {
+function archGeometry(seed, palette) {
   let g = new THREE.TorusGeometry(3.0, 0.95, 12, 36, Math.PI);
   g.deleteAttribute('normal');
   g.deleteAttribute('uv');
@@ -106,7 +104,7 @@ function archGeometry(seed) {
     pos.setXYZ(i, _v.x, _v.y, _v.z);
   }
   g.computeVertexNormals();
-  colorize(g, seed, 1);
+  colorize(g, seed, 1, palette);
   return g;
 }
 
@@ -124,12 +122,8 @@ function place(g, x, z, sx, sy, sz, rotY, sink = 0.18) {
   return g;
 }
 
-export function createRocks(r) {
-  const geos = [];
-  const occluders = [];
-  const spheres = [];
-  // x, z, sx, sy, sz, detail
-  const big = [
+// The reef's rocks: x, z, sx, sy, sz, detail
+const REEF_ROCKS = [
     [-8.6, -3.6, 3.1, 2.4, 2.7, 4],
     [-6.1, -0.6, 1.25, 0.95, 1.1, 3],
     [8.9, -6.2, 3.5, 2.9, 3.0, 4],
@@ -143,28 +137,39 @@ export function createRocks(r) {
     [0.5, -34, 8.0, 6.0, 6.0, 3],
     [-22, -30, 7.0, 7.5, 6.0, 3],
     [24, -34, 8.0, 8.0, 7.0, 3],
-  ];
+];
+
+// `layout` (the open sea has its own): big rocks, the arch ([x, z, turn] or null), pebbles
+// ({count, x: [min, max], z: [min, max], clear: [[x, z, half width, half depth]]}) and colours.
+export function createRocks(r, { big = REEF_ROCKS, arch: archAt = [-4.5, -15, 0.35], pebbles = { count: 70, x: [-11, 11], z: [-3, 9], clear: [[2.0, 0.9, 1.8, 1.4]] }, colors = REEF_COLORS } = {}) {
+  const geos = [];
+  const occluders = [];
+  const spheres = [];
+  const palette = colors.map((c) => new THREE.Color(c));
   big.forEach(([x, z, sx, sy, sz, detail], i) => {
-    const g = rockGeometry(detail, i + 1, z > -15 ? 1 : 0.6);
+    const g = rockGeometry(detail, i + 1, z > -15 ? 1 : 0.6, palette);
     place(g, x, z, sx, sy, sz, rand(r, 0, TAU));
     geos.push(g);
     if (z > -16) occluders.push([x, z, Math.max(sx, sz) * 1.15]);
     if (z > -12) spheres.push({ x, y: sandHeight(x, z) + sy * 0.3, z, r: Math.max(sx, sy, sz) * 0.85 });
   });
 
-  const arch = archGeometry(9.1);
-  _p.set(-4.5, sandHeight(-4.5, -15) - 0.7, -15);
-  _q.setFromEuler(_e.set(0, 0.35, 0));
-  arch.applyMatrix4(_m.compose(_p, _q, _s.set(1, 1.05, 1)));
-  geos.push(arch);
+  if (archAt) {
+    const [ax, az, turn] = archAt;
+    const arch = archGeometry(9.1, palette);
+    _p.set(ax, sandHeight(ax, az) - 0.7, az);
+    _q.setFromEuler(_e.set(0, turn, 0));
+    arch.applyMatrix4(_m.compose(_p, _q, _s.set(1, 1.05, 1)));
+    geos.push(arch);
+  }
 
   // pebbles scattered in front
-  for (let i = 0; i < 70; i++) {
-    const x = rand(r, -11, 11);
-    const z = rand(r, -3, 9);
-    if (Math.abs(x - 2.0) < 1.8 && Math.abs(z - 0.9) < 1.4) continue; // keep the chest spot clear
+  for (let i = 0; i < pebbles.count; i++) {
+    const x = rand(r, pebbles.x[0], pebbles.x[1]);
+    const z = rand(r, pebbles.z[0], pebbles.z[1]);
+    if (pebbles.clear.some(([cx, cz, w, d]) => Math.abs(x - cx) < w && Math.abs(z - cz) < d)) continue; // keep the chest spot clear
     const sc = rand(r, 0.08, 0.22);
-    const g = rockGeometry(1, 100 + i, 0.3);
+    const g = rockGeometry(1, 100 + i, 0.3, palette);
     place(g, x, z, sc * rand(r, 0.9, 1.4), sc * rand(r, 0.6, 0.9), sc, rand(r, 0, TAU), 0.25);
     geos.push(g);
   }

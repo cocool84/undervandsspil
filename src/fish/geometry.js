@@ -11,7 +11,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { smoothstep } from '../util/math.js';
 
 export const PART = { BODY: 0, TAIL: 1, FIN: 2, PECTORAL: 3, EYE: 4, SPIKE: 5 };
-const BODY_U = 0.8;
+export const BODY_U = 0.8;
 
 export const SHAPE_DEFS = [
   {
@@ -58,7 +58,7 @@ export const SHAPE_DEFS = [
 
 // ---------------------------------------------------------------- helpers
 
-function makeGeometry(positions, uvs, indices, attrs) {
+export function makeGeometry(positions, uvs, indices, attrs) {
   const g = new THREE.BufferGeometry();
   const n = positions.length / 3;
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -80,7 +80,7 @@ function makeGeometry(positions, uvs, indices, attrs) {
 }
 
 // A (nu+1)×(nv+1) grid. fn(a, b) → { p:[x,y,z], uv:[u,v], u, fin }
-function grid(nu, nv, part, fn) {
+export function grid(nu, nv, part, fn) {
   const pos = [];
   const uvs = [];
   const u = [];
@@ -218,53 +218,11 @@ export function buildFishGeometry(shapeIndex) {
     }));
   }
 
-  // ---- eyes: domes sunk into the head, with an eye-local frame for drawing in the shader
-  const eyeCentres = [];
-  for (const side of [1, -1]) {
-    const e = d.eye;
-    const te = e.at;
-    const ye = yc(te) + h(te) * e.up;
-    const ze = w(te) * Math.sqrt(Math.max(1 - e.up * e.up, 0.1));
-    const Z = new THREE.Vector3(0.28, 0.14, side).normalize();
-    const X = new THREE.Vector3(1, 0, 0).addScaledVector(Z, -Z.x).normalize();
-    const Y = side > 0 ? new THREE.Vector3().crossVectors(Z, X) : new THREE.Vector3().crossVectors(X, Z);
-    const centre = new THREE.Vector3(xAt(te), ye, side * ze).addScaledVector(Z, -e.r * 0.3);
-    const FLAT = 0.6; // dome height relative to its radius
-    eyeCentres.push(centre);
-    const dome = new THREE.SphereGeometry(1, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2);
-    dome.rotateX(Math.PI / 2); // pole → +z (outward)
-    const src = dome.attributes.position;
-    const nrm = dome.attributes.normal;
-    const n = src.count;
-    const pos = [];
-    const uvs = [];
-    const u = [];
-    const eye = [];
-    const eyeC = [];
-    const partA = [];
-    const tmp = new THREE.Vector3();
-    for (let i = 0; i < n; i++) {
-      const lx = src.getX(i);
-      const ly = src.getY(i);
-      const lz = src.getZ(i);
-      tmp.copy(centre).addScaledVector(X, lx * e.r).addScaledVector(Y, ly * e.r).addScaledVector(Z, lz * e.r * FLAT);
-      pos.push(tmp.x, tmp.y, tmp.z);
-      uvs.push(te * BODY_U, 0.4);
-      u.push(uAt(tmp.x));
-      eye.push(lx, ly, lz, side);
-      eyeC.push(centre.x, centre.y, centre.z);
-      partA.push(PART.EYE);
-    }
-    const g = makeGeometry(pos, uvs, Array.from(dome.index.array), { part: partA, u, eye, eyeC });
-    // exact sphere normals in the fish frame
-    const gn = g.attributes.normal;
-    for (let i = 0; i < n; i++) {
-      tmp.set(0, 0, 0).addScaledVector(X, nrm.getX(i)).addScaledVector(Y, nrm.getY(i)).addScaledVector(Z, nrm.getZ(i) / FLAT).normalize();
-      gn.setXYZ(i, tmp.x, tmp.y, tmp.z);
-    }
-    dome.dispose();
-    parts.push(g);
-  }
+  // ---- eyes
+  const te = d.eye.at;
+  const eyes = eyeDomes({ x: xAt(te), y: yc(te) + h(te) * d.eye.up, z: w(te) * Math.sqrt(Math.max(1 - d.eye.up * d.eye.up, 0.1)), r: d.eye.r, t: te, uAt });
+  parts.push(...eyes.parts);
+  const eyeCentres = eyes.centres;
 
   // ---- puffer spikes: soft little cones all over that grow when it puffs up
   if (d.spikes) {
@@ -311,7 +269,6 @@ export function buildFishGeometry(shapeIndex) {
   geometry.computeBoundingSphere();
   geometry.boundingSphere.radius *= 1.35;
 
-  const te = d.eye.at;
   const eyeY = yc(te) + h(te) * d.eye.up;
   const meta = {
     def: d,
@@ -325,4 +282,54 @@ export function buildFishGeometry(shapeIndex) {
     eyeCentres,
   };
   return { geometry, meta };
+}
+
+// Eyes: domes sunk into the head, with an eye-local frame for drawing in the shader.
+// (x, y, z) is where the left eye (z > 0) sits on the skin, `t` its place along the body,
+// `sink` how deep (in eye radii) the dome sits in the head.
+export function eyeDomes({ x, y, z, r, t, uAt, sink = 0.3 }) {
+  const parts = [];
+  const centres = [];
+  for (const side of [1, -1]) {
+    const Z = new THREE.Vector3(0.28, 0.14, side).normalize();
+    const X = new THREE.Vector3(1, 0, 0).addScaledVector(Z, -Z.x).normalize();
+    const Y = side > 0 ? new THREE.Vector3().crossVectors(Z, X) : new THREE.Vector3().crossVectors(X, Z);
+    const centre = new THREE.Vector3(x, y, side * z).addScaledVector(Z, -r * sink);
+    const FLAT = 0.6; // dome height relative to its radius
+    centres.push(centre);
+    const dome = new THREE.SphereGeometry(1, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2);
+    dome.rotateX(Math.PI / 2); // pole → +z (outward)
+    const src = dome.attributes.position;
+    const nrm = dome.attributes.normal;
+    const n = src.count;
+    const pos = [];
+    const uvs = [];
+    const u = [];
+    const eye = [];
+    const eyeC = [];
+    const partA = [];
+    const tmp = new THREE.Vector3();
+    for (let i = 0; i < n; i++) {
+      const lx = src.getX(i);
+      const ly = src.getY(i);
+      const lz = src.getZ(i);
+      tmp.copy(centre).addScaledVector(X, lx * r).addScaledVector(Y, ly * r).addScaledVector(Z, lz * r * FLAT);
+      pos.push(tmp.x, tmp.y, tmp.z);
+      uvs.push(t * BODY_U, 0.4);
+      u.push(uAt(tmp.x));
+      eye.push(lx, ly, lz, side);
+      eyeC.push(centre.x, centre.y, centre.z);
+      partA.push(PART.EYE);
+    }
+    const g = makeGeometry(pos, uvs, Array.from(dome.index.array), { part: partA, u, eye, eyeC });
+    // exact sphere normals in the fish frame
+    const gn = g.attributes.normal;
+    for (let i = 0; i < n; i++) {
+      tmp.set(0, 0, 0).addScaledVector(X, nrm.getX(i)).addScaledVector(Y, nrm.getY(i)).addScaledVector(Z, nrm.getZ(i) / FLAT).normalize();
+      gn.setXYZ(i, tmp.x, tmp.y, tmp.z);
+    }
+    dome.dispose();
+    parts.push(g);
+  }
+  return { parts, centres };
 }

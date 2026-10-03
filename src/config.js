@@ -18,8 +18,10 @@ export const flags = {
   nosw: params.has('nosw'),
   autostart: params.has('autostart'),
   night: params.has('night'),
+  ocean: params.has('ocean'), // start in the open sea
   nantest: params.has('nantest'),
   // ?fill=N: N painted test fish instead of our own (never saved) — for measuring performance
+  // (at most 25 in the reef and 8 big animals in the open sea)
   fill: params.has('fill') ? Math.min(Math.max(Math.round(num('fill', 25)), 0), 25) : null,
 };
 

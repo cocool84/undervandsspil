@@ -1,6 +1,7 @@
 // "Save a copy" / "load a copy" of the children's own fish (parents' corner): one small JSON
-// file the iPad can keep in Files. Loading checks every field, so any file is safe to try —
-// a file that is not ours, or a broken fish in it, is simply left out.
+// file the iPad can keep in Files, with the reef's fish (`fish`) and the open sea's big
+// animals (`sea`). Loading checks every field, so any file is safe to try — a file that is
+// not ours, or a broken fish in it, is simply left out.
 
 const APP = 'undervandsspil';
 const MAX_PAINT = 400_000; // characters of one painting's data URL
@@ -9,9 +10,9 @@ const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const PAINT = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/;
 const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 
-export function backupFile(fish) {
+export function backupFile(fish, sea = []) {
   const now = new Date();
-  const data = { app: APP, v: 1, saved: now.toISOString(), fish };
+  const data = { app: APP, v: 1, saved: now.toISOString(), fish, sea };
   return new File([JSON.stringify(data)], `akvariet-${now.toISOString().slice(0, 10)}.json`, { type: 'application/json' });
 }
 
@@ -37,7 +38,8 @@ export async function offerFile(file) {
   return 'downloaded';
 }
 
-// The fish in a saved copy, checked field by field — or null if it is not one of ours.
+// The fish in a saved copy, checked field by field — { fish, sea } — or null if it is not
+// one of ours.
 export function readBackup(text) {
   let data;
   try {
@@ -46,10 +48,15 @@ export function readBackup(text) {
     return null;
   }
   if (!data || data.app !== APP || !Array.isArray(data.fish)) return null;
+  return { fish: checked(data.fish, 0, 3), sea: Array.isArray(data.sea) ? checked(data.sea, 4, 7) : [] };
+}
+
+// Only fish whose shape is one of [lo, hi] (reef fish 0–3, big animals 4–7).
+function checked(list, lo, hi) {
   const fish = [];
-  for (const f of data.fish.slice(0, 100)) {
+  for (const f of list.slice(0, 100)) {
     if (!f || typeof f !== 'object' || !ID.test(f.id) || !['design', 'wand'].includes(f.kind)) continue;
-    if (!int(f.shape, 0, 3) || !int(f.pattern, 0, 3) || !int(f.eyes, 0, 3) || !HEX.test(f.color)) continue;
+    if (!int(f.shape, lo, hi) || !int(f.pattern, 0, 3) || !int(f.eyes, 0, 3) || !HEX.test(f.color)) continue;
     if (!Number.isFinite(f.born) || !Number.isFinite(f.seed)) continue;
     const paint = typeof f.paint === 'string' && f.paint.length <= MAX_PAINT && PAINT.test(f.paint) ? f.paint : null;
     fish.push({

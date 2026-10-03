@@ -39,6 +39,43 @@ export function shapeIcon(name) {
   return svg(`${spikes}<path d="${BODY[name]}" fill="var(--fish)" stroke="${OUT}" stroke-width="3.5" stroke-linejoin="round"/>${fin}${eyeDot(ex, ey)}${smile(ex + 4, ey + 12)}`);
 }
 
+// ---------------------------------------------------------------- the big animals of the open sea
+
+const ANIMAL = {
+  dolphin: 'M95 50C90 47 86 46 83 45C80 38 72 33 60 32L54 31C50 25 47 21 44 16C46 24 46 29 44 33C36 35 29 39 24 44C19 40 12 37 5 35C9 40 11 44 12 47C11 50 9 54 5 59C12 57 19 54 24 52C34 59 46 63 58 63C60 67 58 71 54 76C62 72 66 67 68 62C76 60 82 57 85 54C89 53 92 52 95 50Z',
+  shark: 'M96 48C92 44 84 39 70 36L60 35C58 27 55 20 52 12C50 21 48 29 46 36C38 38 30 41 22 45C16 37 10 29 4 21C6 31 8 40 10 48C9 53 8 58 6 64C11 59 16 55 21 52C30 57 40 60 52 61C55 66 54 72 50 79C58 74 63 68 66 62C76 61 84 58 90 54C93 52 95 50 96 48Z',
+  orca: 'M94 54C94 46 88 40 78 37C72 35 64 34 58 34C56 26 53 17 50 7C49 18 48 27 46 36C38 38 31 41 26 44C21 40 15 36 8 34C10 39 12 44 14 48C12 52 10 56 8 61C15 59 21 56 26 54C34 61 44 66 56 66C57 71 58 76 60 81C66 78 70 70 72 64C80 64 87 62 91 59C93 58 94 56 94 54Z',
+  whale: 'M93 58C93 73 77 82 56 82C40 82 28 77 22 69C18 64 16 58 15 52L5 44C9 43 13 45 15 47C15 42 17 37 21 32C22 38 22 44 21 49C30 44 44 37 61 37C79 37 93 45 93 58Z',
+};
+
+const ANIMAL_FACE = {
+  dolphin: `${eyeDot(76, 44, 4.6)}<path d="M94 51q-6 3-12 1" stroke="${OUT}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`,
+  shark: `<path d="M68 45q-2 5 0 10M73 45q-2 5 0 10M78 45q-2 5 0 10" stroke="${OUT}" stroke-width="2.2" fill="none" stroke-linecap="round" opacity="0.7"/>${eyeDot(84, 43, 4.8)}<path d="M93 52q-6 4-13 1" stroke="${OUT}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`,
+  orca: `<ellipse cx="72" cy="42" rx="8.5" ry="3.6" transform="rotate(-12 72 42)" fill="#fff"/><path d="M91 59C83 63 70 65 58 64C66 70 82 68 91 59Z" fill="#fff"/>${eyeDot(84, 49, 4.6)}<path d="M93 56q-5 3-10 2" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round"/>`,
+  whale: `<path d="M90 65C86 75 72 80 56 80C45 80 36 77 30 72C46 76 72 75 90 65Z" fill="#fff" opacity="0.85"/>${eyeDot(78, 56, 5)}<path d="M91 62q-8 6-16 3" stroke="${OUT}" stroke-width="2.6" fill="none" stroke-linecap="round"/>`,
+};
+
+export function animalIcon(name) {
+  return svg(`<path d="${ANIMAL[name]}" fill="var(--fish)" stroke="${OUT}" stroke-width="3.2" stroke-linejoin="round"/>${ANIMAL_FACE[name]}`);
+}
+
+// The world button shows where it takes you: out to the open sea (a whale blowing a
+// fountain) or home to the reef (a striped fish by a coral).
+const TO_SEA = svg(
+  `<path d="M64 36c-1-7-5-12-11-15M64 36c1-7 5-12 11-15M64 36V18" stroke="#e8fbff" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+   <circle cx="51" cy="19" r="3.6" fill="#e8fbff"/><circle cx="77" cy="19" r="3.6" fill="#e8fbff"/><circle cx="64" cy="14" r="3.6" fill="#e8fbff"/>
+   <path d="${ANIMAL.whale}" fill="#3f6fce" stroke="#1b2f66" stroke-width="3.2" stroke-linejoin="round"/>${ANIMAL_FACE.whale}`,
+);
+const TO_REEF = svg(
+  `<path d="M26 94V70M26 80 15 67M26 75l10-14M15 67v-9M36 61v-9M15 67l-6-4" stroke="#ff6f9f" stroke-width="7" fill="none" stroke-linecap="round"/>
+   <circle cx="15" cy="57" r="5" fill="#ffc2dc"/><circle cx="36" cy="51" r="5" fill="#ffc2dc"/><circle cx="8" cy="62" r="4.5" fill="#ffc2dc"/>
+   <defs><clipPath id="toreef"><path d="${BODY.round}" transform="translate(22 4) scale(0.78)"/></clipPath></defs>
+   <path d="${BODY.round}" transform="translate(22 4) scale(0.78)" fill="#ff8a3d"/>
+   <g clip-path="url(#toreef)"><rect x="56" y="0" width="7" height="100" fill="#fff"/><rect x="72" y="0" width="6" height="100" fill="#fff"/></g>
+   <path d="${BODY.round}" transform="translate(22 4) scale(0.78)" fill="none" stroke="${OUT}" stroke-width="4" stroke-linejoin="round"/>
+   ${eyeDot(77, 39, 5)}`,
+);
+
 // ---------------------------------------------------------------- patterns on a round fish
 
 let clipId = 0;
@@ -121,6 +158,9 @@ function folderIcon(save) {
 
 export const ICONS = {
   stepShape: svg(`<path d="${BODY.round}" fill="#fff" stroke="${OUT}" stroke-width="4" stroke-linejoin="round"/>${eyeDot(70, 45)}`),
+  stepShapeSea: svg(`<path d="${ANIMAL.whale}" fill="#fff" stroke="${OUT}" stroke-width="4" stroke-linejoin="round"/>${eyeDot(78, 56, 5)}`),
+  toSea: TO_SEA,
+  toReef: TO_REEF,
   stepPaint: svg(
     `<path d="M50 14C26 14 10 30 10 50c0 18 14 30 28 30 8 0 10-6 8-12-2-7 3-11 9-10 12 2 33 0 33-20 0-14-16-24-38-24z" fill="#fff4dc" stroke="${OUT}" stroke-width="4"/>
      <circle cx="30" cy="40" r="7" fill="#ff5d5d"/><circle cx="46" cy="28" r="7" fill="#ffd23f"/><circle cx="64" cy="30" r="7" fill="#35d07f"/><circle cx="74" cy="46" r="7" fill="#3fa9ff"/>

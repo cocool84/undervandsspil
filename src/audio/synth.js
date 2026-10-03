@@ -513,4 +513,83 @@ export function goodbye(ctx, dest, t, { base = 6, gain = 0.09 } = {}) {
   return 1.0;
 }
 
-export const RECIPES = { bloop, pling, sparkle, fishTune, puffup, nom, splash, whoosh, chime, clickclack, boing, pop, puff, treasure, tock, plop, morph, paintNote, pour, blink, harp, magic, fanfare, goodbye, musicBox, theme };
+// ---------------------------------------------------------------- the open sea
+
+// The big animals sing their own little tunes (kind: 4 dolphin, 5 shark, 6 orca, 7 whale).
+// `base` is the animal's voice — the whale's is the deepest; `short` is a single soft note
+// for rapid repeat taps.
+export function animalTune(ctx, dest, t, { kind = 4, trick = 'flip', base = 7, gain = 0.11, short = false } = {}) {
+  const out = soft(ctx, dest, 2400);
+  const f = (step) => noteFreq(base + step);
+  if (short) {
+    mallet(ctx, out, t, f([0, 2, 3][Math.floor(Math.random() * 3)]), gain * 0.8, kind === 7 ? 0.55 : 0.3);
+    return 0.65;
+  }
+  switch (kind) {
+    case 5: // the shark: "da-dum… da-dum, da-da-da — ting!" (a friendly little chase)
+      [0, 0.34, 0.6, 0.76, 0.9].forEach((dt, i) => mallet(ctx, out, t + dt, f(i % 2 ? 0 : -1), gain * (0.72 + i * 0.06), 0.22));
+      mallet(ctx, out, t + 1.1, f(5), gain * 0.8, 0.5);
+      glide(ctx, out, t + 1.12, f(3), f(7), 0.22, gain * 0.4);
+      return 1.6;
+    case 6: // the orca: a playful "woo-hoo!"
+      glide(ctx, out, t, f(-1), f(3), 0.28, gain * 0.6, f(2));
+      glide(ctx, out, t + 0.34, f(1), f(6), 0.3, gain * 0.6);
+      mallet(ctx, out, t + 0.66, f(trick === 'jump' ? 7 : 5), gain * 0.7, 0.45);
+      return 1.15;
+    case 7: // the whale: a slow, deep song with a soft shimmer above it
+      glide(ctx, out, t, f(-1), f(4), 0.9, gain * 0.7, f(2));
+      glide(ctx, out, t, f(4), f(9), 0.9, gain * 0.2, f(7));
+      mallet(ctx, out, t + 1.0, f(3), gain * 0.6, 0.6);
+      bloop(ctx, dest, t + 1.15, { note: base + 7, gain: gain * 0.5, short: true });
+      return 1.8;
+    default: // the dolphin: quick happy whistles, "wee-wee-wheee!"
+      glide(ctx, out, t, f(0), f(3), 0.14, gain * 0.55);
+      glide(ctx, out, t + 0.17, f(1), f(4), 0.14, gain * 0.55);
+      glide(ctx, out, t + 0.34, f(2), f(trick === 'jump' ? 7 : 6), 0.3, gain * 0.6, trick === 'flip' ? f(4) : 0);
+      mallet(ctx, out, t + 0.72, f(5), gain * 0.6, 0.4);
+      return 1.2;
+  }
+}
+
+// The whale blowing out of its blowhole: a soft breathy "pfffh" and bubbles bubbling up.
+export function spout(ctx, dest, t, { gain = 0.16 } = {}) {
+  const s = noise(ctx, t, 0.75);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(480, t);
+  bp.frequency.exponentialRampToValueAtTime(1200, t + 0.25);
+  bp.frequency.exponentialRampToValueAtTime(650, t + 0.7);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+  s.connect(bp).connect(g).connect(soft(ctx, soft(ctx, dest, 1800), 1800));
+  for (let i = 0; i < 5; i++) bloop(ctx, dest, t + 0.15 + i * 0.1, { note: 6 + i, gain: 0.07, short: true });
+  return 0.85;
+}
+
+// The sunken ship's bell: "ding… ding", round and warm.
+export function bell(ctx, dest, t, { note = 3, gain = 0.1 } = {}) {
+  const out = soft(ctx, dest, 2600);
+  const f = noteFreq(note);
+  for (const [dt, k] of [[0, 1], [0.42, 0.8]]) {
+    for (const [ratio, level, decay] of [[1, 1, 1.4], [2, 0.35, 0.8], [2.76, 0.18, 0.5], [5.4, 0.05, 0.2]]) {
+      const o = osc(ctx, 'sine', f * ratio, t + dt, decay + 0.05);
+      const g = ctx.createGain();
+      env(g, t + dt, gain * k * level, 0.004, decay);
+      o.connect(g).connect(out);
+    }
+  }
+  return 1.9;
+}
+
+// A whale far away (the open sea's calm background): a slow, low glide.
+export function whaleCall(ctx, dest, t, { gain = 0.07, note = 0 } = {}) {
+  const out = soft(ctx, dest, 900);
+  glide(ctx, out, t, noteFreq(note - 2), noteFreq(note + 2), 1.6, gain, noteFreq(note));
+  glide(ctx, out, t + 0.05, noteFreq(note + 3), noteFreq(note + 7), 1.6, gain * 0.25, noteFreq(note + 5));
+  return 1.9;
+}
+
+export const RECIPES = { bloop, pling, sparkle, fishTune, puffup, nom, splash, whoosh, chime, clickclack, boing, pop, puff, treasure, tock, plop, morph, paintNote, pour, blink, harp, magic, fanfare, goodbye, musicBox, theme, animalTune, spout, bell };

@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { buildFishGeometry } from './geometry.js';
+import { buildAnimalGeometry, FIRST_ANIMAL } from './animals.js';
 import { createFishMaterial } from './material.js';
 import { createPaint } from './paint.js';
 import { personality, patternColor } from './dna.js';
@@ -10,12 +11,17 @@ import { clamp, damp, Spring, easeInOutCubic } from '../util/math.js';
 
 const geometryCache = new Map();
 export function fishGeometry(shape) {
-  if (!geometryCache.has(shape)) geometryCache.set(shape, buildFishGeometry(shape));
+  if (!geometryCache.has(shape)) geometryCache.set(shape, shape < FIRST_ANIMAL ? buildFishGeometry(shape) : buildAnimalGeometry(shape));
   return geometryCache.get(shape);
 }
 
-const TEMPO = [1.0, 1.15, 0.8, 1.5]; // tail-beat tempo per shape
-const TRICKS = ['flip', 'roll', 'spin', 'jump'];
+// Per shape: the four fish, then dolphin, shark, orca and whale.
+const TEMPO = [1.0, 1.15, 0.8, 1.5, 0.85, 0.8, 0.62, 0.4]; // tail-beat tempo
+const FIN_TEMPO = [1, 1, 1, 1, 0.55, 0.45, 0.45, 0.28]; // flipper flaps: slow and grand for the big ones
+const VOICE = [6, 7, 6, 5, 8, 4, 3, 1]; // singing voice: bigger animals sing lower
+const SLOW = [1, 1, 1, 1, 1, 1.1, 1.3, 1.9]; // how long a trick takes
+const FISH_TRICKS = ['flip', 'roll', 'spin', 'jump'];
+const TRICKS = { 4: ['flip', 'jump', 'spin', 'roll'], 5: ['roll', 'chomp', 'spin', 'chomp'], 6: ['roll', 'jump', 'spin', 'flip'], 7: ['spout', 'roll'] };
 const AXIS = { flip: new THREE.Vector3(0, 0, 1), roll: new THREE.Vector3(1, 0, 0), spin: new THREE.Vector3(0, 1, 0) };
 const _e = new THREE.Euler(0, 0, 0, 'YZX');
 const _q = new THREE.Quaternion();
@@ -50,7 +56,8 @@ export class Fish {
     this.size = this.persona.size;
     this.mesh.scale.setScalar(this.size);
     // singing voice (a step of the pentatonic scale): bigger fish sing lower, each a bit its own
-    this.voice = clamp(6 + [0, 1, 0, -1][dna.shape] - Math.round((this.size - 1) * 6) + ((dna.seed >>> 4) % 3) - 1, 4, 7);
+    this.animal = dna.shape >= FIRST_ANIMAL;
+    this.voice = clamp(VOICE[dna.shape] - Math.round((this.size - 1) * 6) + ((dna.seed >>> 4) % 3) - 1, this.animal ? 0 : 4, this.animal ? 9 : 7);
     this.tunedAt = -1e9;
     this.radius = meta.radius * this.size;
     this.pos = this.mesh.position;
@@ -97,7 +104,8 @@ export class Fish {
     this.prevSpeed = 0;
     this.onGone = null;
     this.target = new THREE.Vector3();
-    this.trickIndex = Math.floor(Math.random() * TRICKS.length);
+    this.tricks = TRICKS[dna.shape] ?? FISH_TRICKS;
+    this.trickIndex = Math.floor(Math.random() * this.tricks.length);
     this.giggleT = 0;
     this.chompT = 0;
     this.fed = 0;
@@ -127,17 +135,31 @@ export class Fish {
     this.setState('leave', { leaveDir: dir, gazeYaw: dir > 0 ? -Math.PI / 2 + 0.5 : -Math.PI / 2 - 0.5 });
   }
 
-  // Tapped! A happy trick — a different one each time.
+  // Tapped! A happy trick — a different one each time. (The shark chomps the water — nom nom —
+  // and the whale blows a fountain of bubbles; see Ocean.)
   trick() {
-    const trick = TRICKS[this.trickIndex++ % TRICKS.length];
-    this.setState('trick', { trickName: trick, trickDur: trick === 'jump' ? 1.0 : 0.9, trickDir: Math.random() < 0.5 ? 1 : -1 });
-    if (trick === 'jump') this.vel.y = 3.4;
+    const trick = this.tricks[this.trickIndex++ % this.tricks.length];
+    const dur = (trick === 'jump' ? 1.0 : trick === 'spout' ? 0.85 : 0.9) * SLOW[this.dna.shape];
+    this.setState('trick', { trickName: trick, trickDur: dur, trickDir: Math.random() < 0.5 ? 1 : -1 });
+    if (trick === 'jump') this.vel.y = this.animal ? 4.2 : 3.4;
+    if (trick === 'chomp') this.chompT = 0.75;
+    if (trick === 'spout') {
+      this.stretch.kick(-1.2);
+      this.bounce.kick(-1.6);
+    }
     this.happy.target = 1;
     this.eyePop.kick(3);
     this.flash = 0.8;
-    this.giggleT = 0.9;
+    this.giggleT = trick === 'chomp' ? 0 : 0.9;
     if (this.dna.shape === 3) this.puffFor = 1.6;
     return trick;
+  }
+
+  // Where the blowhole is right now (world space), for the whale's fountain.
+  blowhole(out) {
+    const b = this.meta.blowhole;
+    if (!b) return out.copy(this.pos);
+    return out.copy(b).multiplyScalar(this.size).applyQuaternion(this.mesh.quaternion).add(this.pos);
   }
 
   curious(point) {
@@ -289,7 +311,7 @@ export class Fish {
     this.swimPhase += dt * (3.2 + frac * 5.5 + gazing * 4) * P.wiggle * TEMPO[this.dna.shape];
     const ampTarget = this.still ? 0 : def.swimAmp * (0.5 + 0.5 * frac + this.spurt * 0.6) * (night ? 0.75 : 1);
     this.swimAmp = damp(this.swimAmp, ampTarget, this.still ? 12 : 3, dt);
-    this.finPhase += dt * (7 + (1 - Math.min(frac, 1)) * 6);
+    this.finPhase += dt * (7 + (1 - Math.min(frac, 1)) * 6) * FIN_TEMPO[this.dna.shape];
     this.bend = damp(this.bend, this.still ? 0 : clamp(-this.yawRate * 0.22, -0.42, 0.42), 6, dt);
     this.stretch.target = 1 + clamp(fwdAcc * 0.025, -0.06, 0.1);
     const s = this.stretch.update(dt);
@@ -353,7 +375,7 @@ export class Fish {
       this.puff.target = this.puffFor > 0 ? 1 : 0;
     }
     this.bellyFor = Math.max(0, this.bellyFor - dt);
-    if (this.dna.shape !== 3) this.puff.target = this.bellyFor > 0 ? 0.28 : 0;   // a round full belly
+    if (this.dna.shape !== 3) this.puff.target = this.bellyFor > 0 ? (this.animal ? 0.12 : 0.28) : 0;   // a round full belly
     const puff = Math.max(0, this.puff.update(dt));
     const happy = clamp(this.happy.update(dt), 0, 1);
     if (this.state !== 'trick') this.happy.target = Math.max(gazing * 0.3, this.happy.target * Math.exp(-dt * 1.5));

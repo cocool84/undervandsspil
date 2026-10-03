@@ -1,10 +1,12 @@
 // localStorage persistence. One key, versioned; every access guarded (private mode, quota).
-// Holds the settings, the children's own fish (DNA, paintings as JPEG data URLs) and the
-// fish factory's unfinished draft.
+// Holds the settings (and which aquarium was open), the children's own fish for the reef
+// (`fish`) and the open sea (`sea`) — DNA, paintings as JPEG data URLs — and the fish
+// factory's unfinished draft.
 
 const KEY = 'undervandsspil.v1';
 
-const DEFAULTS = { v: 1, settings: { night: false, muted: false, volume: 0.7, ambience: 0.5 }, fish: [], draft: null };
+const DEFAULTS = { v: 1, settings: { night: false, muted: false, volume: 0.7, ambience: 0.5, world: 'reef' }, fish: [], sea: [], draft: null };
+const fishList = (list) => (Array.isArray(list) ? list.filter((f) => f && typeof f.id === 'string') : []);
 
 export function loadState() {
   try {
@@ -14,7 +16,8 @@ export function loadState() {
     return {
       v: 1,
       settings: { ...DEFAULTS.settings, ...(data.settings || {}) },
-      fish: Array.isArray(data.fish) ? data.fish.filter((f) => f && typeof f.id === 'string') : [],
+      fish: fishList(data.fish),
+      sea: fishList(data.sea),
       draft: data.draft && typeof data.draft === 'object' ? data.draft : null,
     };
   } catch {
@@ -49,11 +52,12 @@ export function saveDraft(draft) {
   return false;
 }
 
-// Save the own fish. If storage is full, paintings are made smaller, and as a last resort
-// the oldest fish lose their paintings (they keep their colour) — a fish is never lost.
-export async function saveFish(list) {
+// Save the own fish of one aquarium (`field`: 'fish' or 'sea'). If storage is full, paintings
+// are made smaller, and as a last resort the oldest fish lose their paintings (they keep
+// their colour) — a fish is never lost.
+export async function saveFish(list, field = 'fish') {
   const state = loadState();
-  state.fish = list;
+  state[field] = list;
   if (saveState(state)) return true;
   for (const f of list) if (f.paint) f.paint = await shrink(f.paint);
   if (saveState(state)) return true;

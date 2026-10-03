@@ -1,12 +1,12 @@
-// Builds the aquarium environment and runs its per-frame updates.
+// The coral reef — the first aquarium: builds its environment and runs its per-frame
+// updates. (The open sea is in ocean.js; both offer the same parts to the rest of the app.)
 
 import * as THREE from 'three';
 import { WORLD } from '../config.js';
 import { mulberry32 } from '../util/rng.js';
 import { U } from '../core/uniforms.js';
 import { createBackground } from './background.js';
-import { Caustics } from './caustics.js';
-import { createSand, sandHeight } from './sand.js';
+import { createSand, sandHeight, setTerrain } from './sand.js';
 import { createGodRays } from './godrays.js';
 import { createSurface } from './surface.js';
 import { createRocks } from './rocks.js';
@@ -30,13 +30,13 @@ const _crab = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 0.45, 0);
 
 export class World {
-  constructor(core, rig) {
+  constructor(core, rig, { scene, caustics }) {
+    this.kind = 'reef';
     this.core = core;
-    const scene = core.scene;
+    this.scene = scene;
+    this.caustics = caustics; // shared light net
+    setTerrain('reef');
     const r = mulberry32(WORLD.layoutSeed);
-
-    this.caustics = new Caustics(256);
-    U.uCaustics.value = this.caustics.texture;
 
     this.background = createBackground();
     this.sand = createSand();

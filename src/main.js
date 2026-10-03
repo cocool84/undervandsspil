@@ -1,13 +1,16 @@
-// Akvariet — entry point: wires renderer, world, the fish factory, quality manager, start
-// screen, parents' corner and the loop.
+// Akvariet — entry point: wires renderer, the two aquariums (the coral reef and the open sea),
+// the fish factory, quality manager, start screen, parents' corner and the loop.
 
 import * as THREE from 'three';
 import { flags, device, TIERS } from './config.js';
 import { createCore } from './core/renderer.js';
 import { CameraRig } from './core/camera.js';
 import { Quality } from './core/quality.js';
-import { updateEnvironment, setNight } from './core/uniforms.js';
+import { U, updateEnvironment, setNight, setPalette } from './core/uniforms.js';
 import { World } from './world/world.js';
+import { Ocean } from './world/ocean.js';
+import { Caustics } from './world/caustics.js';
+import { setTerrain } from './world/sand.js';
 import { StartScreen, requestFullscreen } from './ui/start.js';
 import { audio } from './audio/engine.js';
 import { blockBrowserGestures } from './input.js';
@@ -18,7 +21,7 @@ import { Interaction } from './interact.js';
 import { Hud } from './ui/hud.js';
 import { loadState, saveSettings, requestPersistence } from './storage.js';
 import { backupFile, offerFile, readBackup } from './backup.js';
-import { Population } from './fish/population.js';
+import { Population, REEF, SEA } from './fish/population.js';
 import { testFish } from './fish/testfish.js';
 import { Factory } from './factory/factory.js';
 import { BubbleWipe } from './ui/transition.js';
@@ -32,13 +35,14 @@ const canvas = document.getElementById('scene');
 const core = createCore(canvas);
 const rig = new CameraRig(core.camera);
 const state = { started: false, updateReady: false };
-// view: what is on screen ('aquarium' | 'factory'); busy: a bubble transition is running
-const app = { core, rig, state, audio, afterRender: null, view: 'aquarium', busy: false };
+// view: what is on screen ('aquarium' | 'factory'); busy: a bubble transition is running;
+// world: the aquarium we are in; worlds: the aquariums built so far (by kind)
+const app = { core, rig, state, audio, afterRender: null, view: 'aquarium', busy: false, holding: false, worlds: {} };
 
-const world = new World(core, rig);
-app.world = world;
-const population = new Population(world.school);
-app.population = population;
+// one light net, shared by both aquariums and the fish factory
+const caustics = new Caustics(256);
+U.uCaustics.value = caustics.texture;
+app.caustics = caustics;
 
 // ---------------------------------------------------------------- settings, fish, buttons
 
@@ -50,12 +54,20 @@ if (saved.settings.night) {
   setNight(true, true);
   audio.setNight(true);
 }
+
+// Who lives where. An aquarium itself is only built the first time it is needed.
+const populations = { reef: new Population(REEF, saved.fish), ocean: new Population(SEA, saved.sea) };
 if (flags.fill !== null) {
-  population.ephemeral = true; // ?fill: painted test fish instead of ours, never saved
-  population.init(testFish(flags.fill));
-} else if (!world.school.grid) {
-  population.init(saved.fish);
+  // ?fill: painted test fish instead of ours, never saved
+  populations.reef = new Population(REEF, testFish(flags.fill));
+  populations.ocean = new Population(SEA, testFish(Math.min(flags.fill, SEA.max), { sea: true }));
+  populations.reef.ephemeral = true;
+  populations.ocean.ephemeral = true;
 }
+app.populations = populations;
+
+const quality = new Quality({ device, flags, onChange: applyTier });
+app.quality = quality;
 
 const interaction = new Interaction(app);
 app.interaction = interaction;
@@ -64,6 +76,7 @@ const hud = new Hud({
   onNight: () => hud.setNight(interaction.toggleNight()),
   onSound: () => hud.setMuted(interaction.toggleSound()),
   onFactory: () => app.openFactory(),
+  onWorld: () => app.switchWorld(),
 });
 hud.setNight(saved.settings.night);
 hud.setMuted(saved.settings.muted);
@@ -91,26 +104,29 @@ const parent = new ParentCorner({
   },
   onAmbience: (v) => audio.setAmbience(v),
   onAmbienceDone: (v) => saveSettings({ ambience: v }),
+  // our own fish and big animals swim away, in both aquariums
   onDelete: () => {
-    population.clearOwn();
+    populations.reef.clearOwn();
+    populations.ocean.clearOwn();
     audio.play('chime', { up: false, gain: 0.07 });
   },
   // a copy of our own fish as a file (with ?fill the saved ones, not the test fish)
   onSaveCopy: () => {
-    const fish = population.ephemeral ? loadState().fish : population.own;
-    offerFile(backupFile(fish)).then((how) => {
+    const fish = populations.reef.ephemeral ? loadState() : { fish: populations.reef.own, sea: populations.ocean.own };
+    offerFile(backupFile(fish.fish, fish.sea)).then((how) => {
       if (how !== 'cancelled') parent.feedback(parent.save, true);
     });
   },
-  // …and back again: the fish we do not have yet swim home
+  // …and back again: the ones we do not have yet swim home, into their own aquarium
   onLoadCopy: async (file) => {
-    const fish = file.size < 20_000_000 && !population.ephemeral ? readBackup(await file.text()) : null;
-    if (!fish || !fish.length) {
+    const copy = file.size < 20_000_000 && !populations.reef.ephemeral ? readBackup(await file.text()) : null;
+    if (!copy || !(copy.fish.length + copy.sea.length)) {
       parent.feedback(parent.load, false);
       audio.play('pling', { note: 4, gain: 0.06, decay: 0.4 });
       return;
     }
-    population.adopt(fish);
+    populations.reef.adopt(copy.fish);
+    populations.ocean.adopt(copy.sea);
     parent.feedback(parent.load, true);
     audio.play('chime', { up: true, gain: 0.07 });
   },
@@ -119,79 +135,172 @@ app.parent = parent;
 
 // ---------------------------------------------------------------- happy little sounds
 
-world.school.onEat = (fish, full) => {
-  audio.play('nom');
-  world.fx.love(fish.pos, full ? 6 : 2);
-  if (full) audio.play('fishTune', { trick: fish.trick(), base: fish.voice }, 0.25);
-};
-world.onCrabEat = (p) => {
-  audio.play('nom', { gain: 0.12 });
-  world.fx.sparkles(p, 5, 0.6);
-};
-world.treasure.onBounce = (item) => audio.play('pling', { note: 7 + item.kind * 2 + Math.floor(Math.random() * 3), gain: 0.05, decay: 0.5 });
+// A fish sings its little tune — the big animals of the open sea have their own.
+function sing(fish, trick, opts = {}, delay = 0) {
+  audio.play(fish.animal ? 'animalTune' : 'fishTune', { trick, base: fish.voice, kind: fish.dna.shape, ...opts }, delay);
+}
+app.sing = sing;
 
-// A new fish from the factory breaks into the picture: splash, bubbles, confetti…
 const _p = new THREE.Vector3();
-world.school.onSplash = (fish) => {
-  const p = fish.pos;
-  _p.copy(p).project(core.camera);
-  core.finalPass.addRipple(_p.x * 0.5 + 0.5, Math.min(_p.y * 0.5 + 0.5, 0.97), time, 1.3);
-  world.bubbles.burst(p.x, p.y, p.z, 28, 0.7, 0.06, 0.24);
-  world.fx.confetti(p, 34);
-  rig.kick.set(0, -0.14, -0.22);
-  audio.play('splash', { gain: 0.2, bubbles: 4 });
-  audio.play('fanfare', {}, 0.12);
-};
-// …and once it has arrived the others come to say hello and the crab dances.
-world.school.onArrive = (fish) => {
-  world.fx.love(fish.pos, 8);
-  world.school.curious(fish.pos.clone(), 4, fish);
-  world.crab.celebrate();
-  audio.play('fishTune', { trick: 'jump', base: fish.voice }); // "hello!"
-  setTimeout(() => {
-    const near = world.school.fish.filter((f) => f !== fish && f.state !== 'leave').sort((a, b) => a.pos.distanceTo(fish.pos) - b.pos.distanceTo(fish.pos));
-    near.slice(0, 3).forEach((f, i) => {
-      world.fx.love(f.pos, 3);
-      audio.play('fishTune', { base: f.voice, short: true }, 0.01 + i * 0.18);
-    });
-  }, 1300);
-};
 
-// A fish that has to make room waves goodbye and sings "bye-bye".
-world.school.onLeave = (fish) => {
-  world.fx.love(fish.pos, 2);
-  audio.play('goodbye', { base: fish.voice });
-};
+function wire(w) {
+  const school = w.school;
+  school.onEat = (fish, full) => {
+    audio.play('nom');
+    w.fx.love(fish.pos, full ? 6 : 2);
+    if (full) {
+      const trick = fish.trick();
+      if (trick === 'spout') w.spout?.(fish);
+      sing(fish, trick, {}, 0.25);
+    }
+  };
+  if (w.crab) {
+    w.onCrabEat = (p) => {
+      audio.play('nom', { gain: 0.12 });
+      w.fx.sparkles(p, 5, 0.6);
+    };
+  }
+  w.treasure.onBounce = (item) => audio.play('pling', { note: 7 + item.kind * 2 + Math.floor(Math.random() * 3), gain: 0.05, decay: 0.5 });
 
-// Nobody has touched the aquarium for a while: a fish swims up to the glass to say hello.
+  // A new fish from the factory breaks into the picture: splash, bubbles, confetti…
+  school.onSplash = (fish) => {
+    const p = fish.pos;
+    _p.copy(p).project(core.camera);
+    core.finalPass.addRipple(_p.x * 0.5 + 0.5, Math.min(_p.y * 0.5 + 0.5, 0.97), time, 1.3);
+    w.bubbles.burst(p.x, p.y, p.z, 28, 0.7, 0.06, 0.24);
+    w.fx.confetti(p, 34);
+    rig.kick.set(0, -0.14, -0.22);
+    audio.play('splash', { gain: 0.2, bubbles: 4 });
+    audio.play('fanfare', {}, 0.12);
+  };
+  // …and once it has arrived the others come to say hello (and the crab dances).
+  school.onArrive = (fish) => {
+    w.fx.love(fish.pos, 8);
+    school.curious(fish.pos.clone(), 4, fish);
+    w.crab?.celebrate();
+    sing(fish, 'jump'); // "hello!"
+    setTimeout(() => {
+      const near = school.fish.filter((f) => f !== fish && f.state !== 'leave').sort((a, b) => a.pos.distanceTo(fish.pos) - b.pos.distanceTo(fish.pos));
+      near.slice(0, 3).forEach((f, i) => {
+        w.fx.love(f.pos, 3);
+        sing(f, undefined, { short: true }, 0.01 + i * 0.18);
+      });
+    }, 1300);
+  };
+
+  // A fish that has to make room waves goodbye and sings "bye-bye".
+  school.onLeave = (fish) => {
+    w.fx.love(fish.pos, 2);
+    audio.play('goodbye', { base: fish.voice });
+  };
+}
+
+// Nobody has touched the aquarium for a while (or we just arrived): a fish swims up to the
+// glass to say hello.
 let visit = null;
 let lastVisit = -1e9;
+let greeting = false;
 function idleVisit(now) {
   if (!state.started || app.view !== 'aquarium' || app.busy) return;
-  if (!visit && now - interaction.lastInputAt > 14000 && now - lastVisit > 16000) {
+  const school = app.world.school;
+  if (!visit && (greeting || now - interaction.lastInputAt > 14000) && now - lastVisit > 16000) {
+    greeting = false;
     lastVisit = now;
-    const free = world.school.fish.filter((f) => f.state === 'wander');
+    const free = school.fish.filter((f) => f.state === 'wander');
     if (!free.length) return;
     const f = free[Math.floor(Math.random() * free.length)];
-    const b = world.school.boundsAt(2.8);
-    f.curious(new THREE.Vector3(b.xMin + 3 + Math.random() * (b.xMax - b.xMin - 6), b.yMin + (b.yMax - b.yMin) * 0.45, 2.8));
+    const z = Math.min(2.8, school.zMax - 0.9);
+    const b = school.boundsAt(z);
+    f.curious(new THREE.Vector3(b.xMin + 3 + Math.random() * (b.xMax - b.xMin - 6), b.yMin + (b.yMax - b.yMin) * 0.45, z));
     f.until = 8;
     visit = f;
   }
   if (visit) {
     const f = visit;
-    if (f.state !== 'curious' || !world.school.fish.includes(f)) {
+    if (f.state !== 'curious' || !school.fish.includes(f)) {
       visit = null;
-    } else if (f.pos.distanceTo(f.target) < 1.3) {
+    } else if (f.pos.distanceTo(f.target) < 1.3 + f.radius * 0.3) {
       const facingRight = Math.cos(f.yaw) > 0;
       f.setState('gaze', { gazeYaw: facingRight ? -Math.PI / 2 + 0.5 : -Math.PI / 2 - 0.5, gazeFor: 3 });
       f.happy.target = 0.9;
-      world.fx.love(f.pos, 3);
-      audio.play('fishTune', { trick: 'roll', base: f.voice, gain: 0.08 });
+      app.world.fx.love(f.pos, 3);
+      sing(f, 'roll', { gain: 0.08 });
       visit = null;
     }
   }
 }
+
+// ---------------------------------------------------------------- the two aquariums
+
+const KINDS = { reef: World, ocean: Ocean };
+
+// Build an aquarium the first time it is needed.
+function buildWorld(kind) {
+  if (app.worlds[kind]) return app.worlds[kind];
+  const w = new KINDS[kind](core, rig, { scene: new THREE.Scene(), caustics });
+  wire(w);
+  if (!w.school.grid) populations[kind].attach(w.school);
+  w.applyTier(TIERS[quality.tier]);
+  if (flags.nantest) addNanTest(w.scene);
+  app.worlds[kind] = w;
+  return w;
+}
+
+// Show an aquarium: its scene, its sea floor, its water colours and its sounds.
+function enterWorld(kind) {
+  const w = buildWorld(kind);
+  setTerrain(kind);
+  setPalette(kind);
+  app.world = w;
+  app.population = populations[kind];
+  core.setScene(w.scene, core.camera);
+  audio.setScene(kind);
+  hud.setWorld(kind);
+  return w;
+}
+
+const gridAsked = new URLSearchParams(location.search).get('fishgrid') || '';
+const firstWorld = flags.ocean || (flags.fishgrid && gridAsked.startsWith('animals')) || (!flags.fishgrid && saved.settings.world === 'ocean') ? 'ocean' : 'reef';
+enterWorld(firstWorld);
+
+// The world button: off to the other aquarium behind the bubble curtain, and a little dive
+// into the new water. The first visit builds it while the bubbles hold the screen.
+app.switchWorld = (kind = app.world.kind === 'reef' ? 'ocean' : 'reef') => {
+  if (app.view !== 'aquarium' || app.busy || !state.started || kind === app.world.kind) return;
+  app.busy = true;
+  hud.hide();
+  parent.setVisible(false);
+  audio.play('whoosh', { up: false, gain: 0.08 });
+  audio.play('harp', { from: kind === 'ocean' ? 9 : 4, count: 7, step: 0.06, gain: 0.05 }, 0.15);
+  wipe
+    .play(() => {
+      const fresh = !app.worlds[kind];
+      enterWorld(kind);
+      if (flags.fill === null) saveSettings({ world: kind });
+      interaction.reset();
+      visit = null;
+      rig.dive(2.2);
+      if (!fresh) return null;
+      // new shaders: let them compile while the bubbles hold the screen
+      app.holding = true;
+      return Promise.race([core.renderer.compileAsync(app.world.scene, core.camera), new Promise((resolve) => setTimeout(resolve, 3000))])
+        .catch(() => {})
+        .then(() => {
+          app.holding = false;
+          quality.forgive(2);
+        });
+    })
+    .then(() => {
+      app.busy = false;
+      audio.play('splash', { gain: 0.12, bubbles: 3 });
+      setTimeout(() => {
+        hud.show();
+        parent.setVisible(true);
+        greeting = true; // someone comes to say hello
+        lastVisit = -1e9;
+      }, 1200);
+    });
+};
 
 // ---------------------------------------------------------------- aquarium ⇄ fish factory
 
@@ -208,7 +317,7 @@ app.openFactory = () => {
       core.setScene(factory.scene, factory.camera);
       core.finalPass.uniforms.uDof.value = 0;
       core.bloom.strength = 0.18; // the fish is big here: keep it crisp
-      factory.show();
+      factory.show(app.world.kind);
     })
     .then(() => {
       app.busy = false;
@@ -223,11 +332,11 @@ app.closeFactory = ({ release = null } = {}) => {
     .play(() => {
       factory.hide();
       app.view = 'aquarium';
-      core.setScene(core.scene, core.camera);
+      core.setScene(app.world.scene, core.camera);
       core.bloom.strength = 0.5;
       applyTier(quality.tier);
       if (release) {
-        population.release(release, 0.75);
+        app.population.release(release, 0.75);
         factory.reset();
       }
     })
@@ -240,16 +349,13 @@ app.closeFactory = ({ release = null } = {}) => {
 
 // ---------------------------------------------------------------- quality
 
-const quality = new Quality({ device, flags, onChange: applyTier });
-app.quality = quality;
-
 function applyTier(index) {
   const tier = TIERS[index];
   core.setSize(window.innerWidth, window.innerHeight, quality.dprFor(index));
   core.setBloom(tier.bloom);
   core.finalPass.uniforms.uDof.value = tier.dof && app.view === 'aquarium' ? 1 : 0;
   core.finalPass.uniforms.uTaps.value = Math.max(tier.taps, 8);
-  world.applyTier(tier);
+  for (const w of Object.values(app.worlds)) w.applyTier(tier);
 }
 
 let resizePending = false;
@@ -325,6 +431,10 @@ function busyWait(ms) {
 }
 
 function loop(now) {
+  if (app.holding) {
+    last = now; // the bubbles cover the screen while a new aquarium gets ready
+    return;
+  }
   if (quality.halfRate) {
     skip = !skip;
     if (skip) return;
@@ -339,11 +449,11 @@ function loop(now) {
 
   updateEnvironment(time, dt);
   if (app.view === 'factory') {
-    world.caustics.render(core.renderer, time); // the light net still plays on the fish
+    caustics.render(core.renderer, time); // the light net still plays on the fish
     factory.update(time, dt);
   } else {
     rig.update(time, dt);
-    world.update(time, dt, core.camera);
+    app.world.update(time, dt, core.camera);
     idleVisit(now);
   }
 
@@ -371,10 +481,9 @@ async function boot() {
     audio.setNight(true);
     hud.setNight(true);
   }
-  if (flags.nantest) addNanTest(core.scene);
   try {
     await Promise.race([
-      Promise.all([core.renderer.compileAsync(core.scene, core.camera), core.renderer.compileAsync(factory.scene, factory.camera)]),
+      Promise.all([core.renderer.compileAsync(app.world.scene, core.camera), core.renderer.compileAsync(factory.scene, factory.camera)]),
       new Promise((resolve) => setTimeout(resolve, 4000)),
     ]);
   } catch {

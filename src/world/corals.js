@@ -1,6 +1,7 @@
 // Corals, anemones, sponges, fans, starfish and shells — generated procedurally at start
 // and merged into one mesh. Attributes drive sway, night glow, patterns and the anemones'
-// touch reaction.
+// touch reaction. The open sea's floor (createSeabed) is made from the same pieces, plus sea
+// urchins.
 
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -348,6 +349,49 @@ function shell(x, z, size, rotY, col) {
   return [moveTo(prep(g, { color: col, kind: 5, local }), x, sandHeight(x, z) + 0.03, z, rotY)];
 }
 
+// A round sea urchin with soft spines.
+function urchin(r, x, z, size, col) {
+  const parts = [];
+  const y = sandHeight(x, z) + size * 0.5;
+  const body = new THREE.SphereGeometry(size, 14, 10);
+  body.scale(1, 0.75, 1);
+  parts.push(moveTo(prep(body, { color: col }), x, y, z));
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const count = 44;
+  for (let i = 0; i < count; i++) {
+    const yN = 1 - (i / (count - 1)) * 1.5; // none underneath
+    const rr = Math.sqrt(Math.max(1 - yN * yN, 0));
+    const a = i * golden;
+    const dir = new THREE.Vector3(Math.cos(a) * rr, yN * 0.75, Math.sin(a) * rr).normalize();
+    const len = size * rand(r, 0.8, 1.25);
+    const spine = new THREE.ConeGeometry(size * 0.075, len, 5);
+    spine.translate(0, len / 2, 0);
+    spine.applyQuaternion(_q.setFromUnitVectors(_up, dir));
+    spine.translate(dir.x * size * 0.85, dir.y * size * 0.62, dir.z * size * 0.85);
+    parts.push(moveTo(prep(spine, { color: col, sway: 0.04, glow: 0.35 }), x, y, z));
+  }
+  return parts;
+}
+
+// Everything merged into one mesh with the coral shader.
+function coralMesh(parts, anemones) {
+  while (anemones.length < MAX_ANEMONES) anemones.push(new THREE.Vector4(0, -100, 0, -100));
+  const geo = mergeGeometries(parts);
+  parts.forEach((g) => g.dispose());
+  geo.computeBoundingSphere();
+  const material = new THREE.ShaderMaterial({
+    name: 'Corals',
+    uniforms: withShared({ uAnemones: { value: anemones } }),
+    vertexShader: VERT,
+    fragmentShader: FRAG,
+    vertexColors: true,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
 export function createCorals(r) {
   const parts = [];
   const occluders = [];
@@ -379,7 +423,6 @@ export function createCorals(r) {
   anemones.push(new THREE.Vector4(-5.5, sandHeight(-5.5, 3.5) + 0.35, 3.5, -100));
   add(anemone(r, -7.6, 1.4, 3, '#2fbf9f', '#d4fff0', 0.85), [-7.6, 1.4, 0.6]);
   anemones.push(new THREE.Vector4(-7.6, sandHeight(-7.6, 1.4) + 0.38, 1.4, -100));
-  while (anemones.length < MAX_ANEMONES) anemones.push(new THREE.Vector4(0, -100, 0, -100));
 
   add(starfish(-1.2, 5.3, 0.36, 0.4, '#ff8a5c'));
   add(starfish(6.1, 4.7, 0.3, 1.2, '#ff6fa8'));
@@ -388,20 +431,31 @@ export function createCorals(r) {
   add(shell(-5.3, 5.6, 0.2, -0.8, '#ffd1e0'));
   add(shell(3.4, 6.1, 0.18, 2.4, '#fff0c8'));
 
-  const geo = mergeGeometries(parts);
-  parts.forEach((g) => g.dispose());
-  geo.computeBoundingSphere();
+  return { mesh: coralMesh(parts, anemones), occluders, anemones };
+}
 
-  const uAnemones = { value: anemones };
-  const material = new THREE.ShaderMaterial({
-    name: 'Corals',
-    uniforms: withShared({ uAnemones }),
-    vertexShader: VERT,
-    fragmentShader: FRAG,
-    vertexColors: true,
-    side: THREE.DoubleSide,
-  });
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.frustumCulled = false;
-  return { mesh, occluders, anemones };
+// The open sea's floor: deep-water sea fans and sponges near the rocks, sea urchins,
+// starfish and shells on the sand.
+export function createSeabed(r) {
+  const parts = [];
+  const occluders = [];
+  const add = (arr, occ) => {
+    parts.push(...arr);
+    if (occ) occluders.push(occ);
+  };
+  add(fanCoral(-9.0, -4.2, 1.2, 0.45, '#d0503c', '#ffc08a'), [-9.0, -4.2, 0.6]);
+  add(fanCoral(9.4, -4.8, 1.35, -0.35, '#8a5ad0', '#e6d0ff'), [9.4, -4.8, 0.6]);
+  add(fanCoral(-12.5, -11, 1.5, 0.6, '#c2508a', '#ffd0e8'));
+  add(tubeSponges(r, 7.6, -2.6, 4, '#e8a33a', '#ffe38a'), [7.6, -2.6, 0.9]);
+  add(tubeSponges(r, 0.4, -13.0, 3, '#c85a8a', '#ffc0dc'));
+  add(urchin(r, -1.8, 3.2, 0.32, '#5a2d82'), [-1.8, 3.2, 0.5]);
+  add(urchin(r, 5.6, 2.6, 0.27, '#3a2f74'));
+  add(urchin(r, -6.6, 2.0, 0.29, '#6a2a5a'));
+  add(starfish(1.4, 5.2, 0.34, 0.7, '#ff7a4a'));
+  add(starfish(-4.2, 4.8, 0.3, 2.1, '#b45aff'));
+  add(starfish(6.9, 5.4, 0.26, 1.1, '#ffb13d'));
+  add(shell(-0.6, 5.8, 0.22, 0.3, '#ffe6d6'));
+  add(shell(4.2, 6.3, 0.2, 2.0, '#fff0c8'));
+  add(shell(-7.0, 5.9, 0.18, -0.6, '#ffd8e6'));
+  return { mesh: coralMesh(parts, []), occluders };
 }

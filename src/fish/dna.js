@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { mulberry32, rand, pick } from '../util/rng.js';
 
 export const SHAPES = ['round', 'long', 'triangle', 'puffer'];
+export const ANIMALS = ['dolphin', 'shark', 'orca', 'whale']; // shapes 4–7: the open sea
 export const PATTERNS = ['none', 'stripes', 'dots', 'rainbow'];
 export const EYES = ['big', 'sleepy', 'happy', 'wonky'];
 
@@ -48,17 +49,26 @@ export const STARTERS = [
   makeDNA({ id: 'starter-8', kind: 'starter', born: 8, shape: 0, color: '#33e0d0', pattern: 1, eyes: 3, glow: false, seed: 808, color2: '#3fa9ff' }),
 ];
 
+// The four big animals that live in the open sea: one of each.
+export const SEA_STARTERS = [
+  makeDNA({ id: 'sea-1', kind: 'starter', born: 1, shape: 4, color: '#7cb6ee', pattern: 0, eyes: 2, glow: true, seed: 111 }),
+  makeDNA({ id: 'sea-2', kind: 'starter', born: 2, shape: 5, color: '#8396b4', pattern: 0, eyes: 0, glow: true, seed: 222 }),
+  makeDNA({ id: 'sea-3', kind: 'starter', born: 3, shape: 6, color: '#222b3f', pattern: 0, eyes: 0, glow: true, seed: 333 }),
+  makeDNA({ id: 'sea-4', kind: 'starter', born: 4, shape: 7, color: '#3f6fce', pattern: 0, eyes: 2, glow: true, seed: 444 }),
+];
+
 // Behaviour and small looks derived deterministically from the seed.
 export function personality(dna) {
   const r = mulberry32(dna.seed);
-  const shapeSpeed = [1.0, 1.25, 0.85, 0.7][dna.shape];
+  const shapeSpeed = [1.0, 1.25, 0.85, 0.7, 1.45, 1.1, 1.2, 0.8][dna.shape];
+  const animal = dna.shape >= 4;
   return {
     speed: rand(r, 0.8, 1.2) * shapeSpeed,
     curiosity: rand(r, 0.4, 1),
     social: rand(r, 0.3, 1),
     playful: rand(r, 0.3, 1),
     depth: rand(r, 0.15, 0.85), // 0 low … 1 high in the water
-    size: rand(r, 1.0, 1.22),
+    size: animal ? rand(r, 0.95, 1.08) : rand(r, 1.0, 1.22),
     wiggle: rand(r, 0.85, 1.2),
     iris: new THREE.Color(pick(r, IRIS)),
     glow: new THREE.Color(pick(r, GLOW)),
@@ -82,11 +92,11 @@ export function patternColor(hex) {
   return new THREE.Color('#fff6e8');
 }
 
-export function randomDNA(kind = 'wand') {
+export function randomDNA(kind = 'wand', sea = false) {
   const r = Math.random;
   return makeDNA({
     kind,
-    shape: Math.floor(r() * SHAPES.length),
+    shape: Math.floor(r() * SHAPES.length) + (sea ? SHAPES.length : 0),
     color: pick(r, PAINT_COLORS.slice(0, 8)),
     pattern: Math.floor(r() * PATTERNS.length),
     eyes: Math.floor(r() * EYES.length),

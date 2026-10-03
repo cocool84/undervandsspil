@@ -2,6 +2,10 @@
 
 Et magisk 3D-undervandsakvarium til småbørn (ca. 2–5 år) på **iPad 10. generation i Safari** (også som hjemmeskærm-app). Børnene kan ikke læse, så der må **ingen tekst** være i brugerfladen: kun ikoner, farver, bevægelse og lyd. Alt reagerer på berøring, og knapperne er store.
 
+Der er **to akvarier**, som man skifter imellem med en knap:
+- **Koralrevet** med små fisk.
+- **Det åbne hav** med store dyr: delfin, haj, spækhugger og hval.
+
 - Live: https://cocool84.github.io/undervandsspil/ (GitHub Pages fra `main`).
 - Repoet er **offentligt** og må kun indeholde kode, så der må ingen personlige oplysninger om familien stå her.
 
@@ -34,8 +38,8 @@ npm run icons        # PNG-ikoner ud fra icons/icon.svg
 - **Skærmbilleder:** havner i `tests/shots/<projekt>/` (git-ignoreret). Se dem kritisk efter visuelle ændringer.
 - **Fuld kørsel:** tager ca. 15–20 min. Kør den i baggrunden og rediger ikke filer i `src/` imens, for testene henter modulerne fra dev-serveren.
 - **Test-hooks:**
-  - `window.__aq`: `ready`, `perf()`, `fish()`, `bubbles()`, `whatIsAt(x, y)`, `snapshotStats()`.
-  - `__aq.app` giver adgang til alt internt, fx `factory`, `population`, `parent` og `audio`.
+  - `window.__aq`: `ready`, `perf()`, `fish()`, `bubbles()`, `whatIsAt(x, y)`, `snapshotStats()`. De gælder altid det akvarium, der vises.
+  - `__aq.app` giver adgang til alt internt, fx `world` (det viste akvarium, `kind` = `'reef'` | `'ocean'`), `worlds`, `population`, `populations.reef`/`.ocean`, `switchWorld()`, `factory`, `parent` og `audio`.
   - `__aq.app.audio.analyze()` renderer alle lyde offline og måler dem.
 
 ## URL-flag (`src/config.js`)
@@ -46,8 +50,10 @@ npm run icons        # PNG-ikoner ud fra icons/icon.svg
 | `?debug=depth` | Viser dybdebufferen |
 | `?quality=N` | Lås kvalitetstrin 0–5 |
 | `?simslow=N` | Busy-wait N ms pr. frame (tester nedskalering) |
-| `?fill=N` | N malede testfisk i stedet for de egne (højst 25). **Gemmes aldrig.** Bruges til ydelsesmåling: `?fill=25&debug` |
+| `?fill=N` | N malede testfisk i stedet for de egne (højst 25 i revet, 8 store dyr i havet). **Gemmes aldrig.** Bruges til ydelsesmåling: `?fill=25&debug` og `?ocean&fill=8&debug` |
+| `?ocean` | Start i det åbne hav |
 | `?fishgrid`, `?fishgrid=eyes` | QA-gitter med alle former, mønstre og øjne |
+| `?fishgrid=animals`, `?fishgrid=animals2` | QA-gitter med de fire store dyr (2: med mønstre og andre øjne). Åbner havet |
 | `?seed=N` | Anden opbygning af revet |
 | `?night` | Start om natten |
 | `?autostart` | Spring startboblen over (tests) |
@@ -56,9 +62,12 @@ npm run icons        # PNG-ikoner ud fra icons/icon.svg
 
 ## Arkitektur
 
-ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst version, kun de filer der bruges) og hentes via import map i `index.html`. Én `WebGLRenderer`, én WebGL-kontekst og to scener: akvariet og fiskefabrikken.
+ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst version, kun de filer der bruges) og hentes via import map i `index.html`. Én `WebGLRenderer` og én WebGL-kontekst. Der er tre scener: revet, havet og fiskefabrikken.
 
-- `src/main.js`: wiring, start, loop, skift mellem akvarium og fabrik (`app.view`, `app.busy` under boble-overgangen), idle-besøg og callbacks for lyd og effekter.
+- `src/main.js`: wiring, start og loop. Desuden:
+  - Skift mellem akvarium og fabrik (`app.view`, og `app.busy` under boble-overgangen).
+  - Skift mellem akvarierne (`app.switchWorld`, `buildWorld`, `enterWorld`).
+  - Idle-besøg og callbacks for lyd og effekter (`wire(world)` pr. akvarium).
 - `src/core/`:
   - `renderer.js`: composer-kæden RenderPass (HalfFloat og DepthTexture på *begge* ping-pong-targets) → UnrealBloomPass → `finalpass.js`.
   - `finalpass.js`: ringe fra berøring, dybdeskarphed, farvekorrektion, vignet, Khronos PBR Neutral tonemap, sRGB og dithering. Erstatter OutputPass.
@@ -66,15 +75,19 @@ ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst ve
   - `quality.js`: tiers ud fra et pixelbudget og en EMA af frametiden.
   - `uniforms.js`: delte uniforms `U` og dag/nat-paletten.
 - `src/glsl/common.js`: fælles GLSL (`PRELUDE`): støj, vandfarve og tåge, `softShade`, caustics og `aqSafe`.
-- `src/world/`: baggrund, sand (`sandHeight` bruges til at placere alt), caustics-RT, lysstråler, overflade, sten, tang, koraller og anemoner, kisten, krabben, vandmænd, søstjerne-tittebøh (`starfish.js`) og store bobler man kan poppe (`bigbubbles.js`). `world.js` bygger og opdaterer det hele og har `pickables`.
-- `src/particles/`: GPU-partikler med startdata i instance-attributter og bevægelsen i shaderen: bobler, fx (hjerter, stjerner, glimmer, konfetti), plankton og skygger. CPU-simuleret: foder og skattens perler.
+- `src/world/`: baggrund, sand (`sandHeight` bruges til at placere alt), caustics-RT, lysstråler, overflade, sten, tang, koraller og anemoner, kisten, krabben, vandmænd, søstjerne-tittebøh (`starfish.js`) og store bobler man kan poppe (`bigbubbles.js`).
+  - `world.js` bygger og opdaterer **revet** og har `pickables`.
+  - `ocean.js` bygger og opdaterer **det åbne hav**: lys sandbund, der falder ud i det dybe, det sunkne skib (`ship.js`), gyldenbrun tangskov, grå sten, havbund med søvifter og søpindsvin (`createSeabed` i `corals.js`) og sildestimen.
+  - Begge har de samme dele (`scene`, `school`, `fx`, `bubbles`, `food`, `treasure`, `starfish`, `bigBubbles`, `pickables`, `seaweed.clusters`, `update`, `applyTier`). Derfor virker berøring, knapper og fabrik i begge.
+- `src/particles/`: GPU-partikler med startdata i instance-attributter og bevægelsen i shaderen: bobler, fx (hjerter, stjerner, glimmer, konfetti), plankton, skygger og sildestimen (`sardines.js`: 140 små fisk, der løber hver sin bane om stimens midte og spredes af `scare(p)`). CPU-simuleret: foder og skattens perler.
 - `src/fish/`:
   - `dna.js`: DNA, startfisk og personlighed ud fra seed.
   - `geometry.js`: én geometri pr. form, alle dele i ét draw call med en fælles UV-layout til maleriet.
+  - `animals.js`: de fire store dyr (former 4–7). Kroppen er bygget af profilkurver, finner og luffer har lidt tykkelse, og de bruger samme UV-layout og samme shader som fiskene.
   - `material.js`: fiske-shaderen med analytiske øjne.
   - `fish.js`: bevægelse, animation og tilstande, plus `display()` til fabrikken.
   - `school.js`: boids, picking og ind/ud-svømning.
-  - `population.js`: hvem der bor i akvariet.
+  - `population.js`: hvem der bor i hvert akvarium (`REEF` og `SEA`). Bestanden findes fra start, og fiskene kommer ind, når akvariet bygges (`attach`).
   - `testfish.js`: testfiskene til `?fill`.
 - `src/factory/`:
   - `factory.js`: fabrikkens logik med 5 trin, tryllestav og slip ud.
@@ -82,7 +95,7 @@ ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst ve
   - `painter.js`: fingermaling med raycast → UV på et lærred på 512×256 i to lag.
 - `src/ui/`: HUD, startboble, fabrikkens knapper, forældrehjørnet, boble-overgangen og alle ikoner (`icons.js`, inline SVG).
 - `src/audio/`: `synth.js` (alle lyde som rene opskrifter), `ambience.js` (havlyd og spilledåse), `engine.js` (lydkæde, stemmeloft, oplåsning) og `analysis.js` (offline-måling til testene).
-- `src/storage.js` gemmer i localStorage. `src/backup.js` håndterer gem/hent kopi som fil. `src/interact.js` styrer berøring i akvariet. `sw.js` er service workeren.
+- `src/storage.js` gemmer i localStorage. `src/backup.js` håndterer gem/hent kopi som fil (med både revets og havets egne dyr). `src/interact.js` styrer berøring i akvariet. `sw.js` er service workeren.
 
 ### Vigtige mønstre
 
@@ -91,8 +104,12 @@ ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst ve
 - **`setState(state, data)`** kopierer `data` ind på fisken. Brug **aldrig** et metodenavn som nøgle (fx `trickName`, ikke `trick`).
 - **NaN/Inf-beskyttelse:** `aqSafe()` sidder på bloom-passets high-pass-input og på alle `tDiffuse`-læsninger i FinalPass, så én dårlig pixel aldrig kan gøre skærmen sort. Den må ikke fjernes. Nul-normaler i geometrien bliver saneret.
 - **Tal i Float32-buffere:** sammenlign med den værdi, der faktisk står i bufferen (se `Bubbles.spawn` og `isAlive`).
-- **Gemning:** nøglen `undervandsspil.v1` = `{v:1, settings:{night, muted, volume, ambience}, fish:[DNA], draft}`. Malerier gemmes som JPEG data-URL i 512×256. Ved fuld kvote bliver malerierne mindre, og som sidste udvej mister de ældste deres maleri. En fisk går aldrig tabt.
-- **DNA:** `{id, born, kind:'design'|'wand'|'starter', shape 0–3, color, pattern 0–3 (ingen, striber, prikker, regnbue), eyes 0–3 (store, søvnige, glade, googly), glow, seed, paint, color2}`.
+- **To akvarier:**
+  - Hvert akvarium har sin egen scene og bygges først, når der er brug for det. En ny verden bygges, mens boble-overgangen holder skærmen dækket (`BubbleWipe.play` venter på et promise), og shaderne kompileres i ventetiden.
+  - `setTerrain(kind)` bestemmer, hvilken havbund `sandHeight` beskriver. `setPalette(kind)` styrer vandets farver og lys.
+  - Lysnettet (caustics) deles af begge akvarier og fabrikken.
+- **Gemning:** nøglen `undervandsspil.v1` = `{v:1, settings:{night, muted, volume, ambience, world}, fish:[DNA], sea:[DNA], draft}`. `fish` er revets egne fisk, `sea` havets egne dyr, og `world` er det akvarium, man var i sidst. Malerier gemmes som JPEG data-URL i 512×256. Ved fuld kvote bliver malerierne mindre, og som sidste udvej mister de ældste deres maleri. En fisk går aldrig tabt.
+- **DNA:** `{id, born, kind:'design'|'wand'|'starter', shape 0–7, color, pattern 0–3 (ingen, striber, prikker, regnbue), eyes 0–3 (store, søvnige, glade, googly), glow, seed, paint, color2}`. Formerne er 0–3 for revets fisk (rund, lang, trekant, kuglefisk) og 4–7 for havets dyr (delfin, haj, spækhugger, hval).
 
 ## Beslutninger truffet undervejs
 
@@ -108,19 +125,35 @@ ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst ve
   - Budget: højst 90 draw calls og 250.000 trekanter.
   - Med 25 malede fisk er tallene 44 draw calls og cirka 191.000 trekanter.
   - Målt på den rigtige iPad 10 (3. oktober 2026): `?fill=25` gav 60 fps på tier 2.
+  - Havet med 8 malede dyr (`?ocean&fill=8`) bruger cirka 25 draw calls og 118.000 trekanter. Det er ikke målt på iPad'en endnu.
 - **Bestand:**
   - **8 startfisk** og **højst 25 fisk** i alt.
   - Når der mangler plads, svømmer først en startfisk ud, så den ældste tryllestavsfisk, så den ældste designede fisk. Egne fisk, der skubbes ud, slettes.
   - Fisk vinker farvel og svømmer ud til siden. Startfisk svømmer ind igen fra siden.
 - **Øjne:** flade og sænket ned i hovedet. Googly-øjne har samme størrelse, og hver pupil ruller for sig. Søvnige og glade øjne skal være tydeligt åbne.
+- **Det åbne hav** (brugerens valg: det åbne hav frem for ishavet):
+  - Dybblåt, klart vand, en sandbund der falder ud i det dybe, et venligt sunket skib med skat, tangskov, grå sten og en sildestime.
+  - **Én af hver til at starte med:** delfin, haj, spækhugger og hval. Der er højst **8 dyr**, og startdyrene svømmer ud først, ligesom i revet.
+  - Delfin, spækhugger og hval slår med halen op og ned (vandrette halefinner). Hajen slår fra side til side.
+  - Artstegninger (hvide maver, spækhuggerens pletter, hajens gæller, hvalens stribede strube) ligger under barnets egen maling.
+  - Tryk på et dyr giver et trick og dyrets egen sang. Hvalen puster en fontæne af bobler, og hajen siger "nom nom".
+  - Tryk på skibet: det gynger, koøjerne blinker, klokken ringer, og der kommer skat ud (højst hvert 3,5 s).
+  - Tryk på sildestimen: den spredes og samler sig igen. Delfinen og spækhuggeren drøner også selv igennem den nu og da.
+- **Skift mellem akvarierne:**
+  - Knappen sidder nederst til venstre ved siden af dag/nat og viser altid det *andet* sted: en hval på vej ud i havet og en fisk ved en koral på vej hjem til revet.
+  - Boble-overgangen dækker skiftet. Derefter dykker kameraet ned i det nye vand, og en beboer svømmer hen og siger hej.
+  - Appen husker, hvilket akvarium man var i sidst.
 - **Fiskefabrikken:** fem trin med kun ikoner: form, maling, mønster, øjne og en stor grøn slip-ud-knap. Kladden huskes.
+  - **Åbnes den fra havet, laver den store dyr** (brugerens valg): formvalget viser de fire dyr, og dyret svømmer ud i havet.
+  - Kladden følger med mellem akvarierne: samme farver og maleri på det tilsvarende dyr eller den tilsvarende fisk (form ± 4).
+  - Et stort dyr læner ryggen lidt mod barnet i fabrikken, så de vandrette halefinner kan ses.
   - **Tryllestaven** laver en tilfældig fisk med ét tryk og springer til slip-ud-trinnet. Selve udsætningen kræver ét tryk mere.
   - **Farveklatter:** den *første* klat farver hele fisken. De næste vælger penselfarven, så man kan male gule striber på en blå fisk. Et ekstra tryk på den valgte klat hælder farven ud over hele fisken igen. Strøgene ligger i et lag over grundfarven.
   - **I male-trinnet er hver finger en pensel.** Strøget maler, når fingeren er over fisken, også hvis det startede ved siden af. Fisken drejer ikke en piruet, når man går ind i male-trinnet.
   - **Lys og scene:** studielys via `inStudio`, bloom-styrke 0,18 og ingen dybdeskarphed.
   - **Drejning:** fisken vender sig næsten forfra ved øjne-trinnet.
 - **Nat og lyd:** dag/nat og lyd til/fra huskes til næste gang.
-- **Forældrehjørnet:** tandhjulet kræver 3 sekunders tryk. Der er skydere til lydstyrke og havlyd, gem/hent kopi og slet egne fisk med ✓/✗.
+- **Forældrehjørnet:** tandhjulet kræver 3 sekunders tryk. Der er skydere til lydstyrke og havlyd, gem/hent kopi og slet egne fisk med ✓/✗. Slet og gem/hent kopi gælder begge akvarier.
   - **Skyderne er egne pointer-styrede komponenter** (`Slider` i `ui/parent.js`), ikke `<input type=range>`. Siden blokerer `touchmove` for at undgå zoom og scroll, og det forhindrer iPad'ens indbyggede skydere i at blive trukket (kun tryk virkede). Mens man trækker, høres en blød tone, der stiger med lydstyrken. Indstillingen gemmes, når fingeren slipper.
   - **Gem kopi:** iOS' delingsark ("Gem i Filer") eller en download.
   - **Hent kopi:** filen tjekkes felt for felt. Kun `data:image/jpeg|png` accepteres som maleri. Fisk, man ikke har i forvejen, svømmer hjem, og 25-grænsen gælder stadig. I `?fill`-tilstand er hent kopi slået fra.
@@ -143,13 +176,20 @@ ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst ve
   - harpe
 - **Fisk:** hver fisk har sin egen stemme (store fisk synger dybere). Hurtige gentagne tryk giver kun én blød tone.
 - **Maling:** brugeren fandt det tidligere stø-sus ved hvert penselstrøg irriterende. I stedet spiller `paintNote` en blød, glasagtig tone højst hvert 0,3 s og først efter cirka 40 px fingerbevægelse. Tonerne vandrer op og ned i skalaen fra penselfarvens egen tone, så maling lyder som en langsom lille melodi. Støj må ikke bruges til maling.
+- **Havets dyr** synger hver sin lille melodi (`animalTune`):
+  - delfinen: glade fløjt ("wii-wii-wiii!")
+  - hajen: et venligt "da-dum … da-dum, da-da-da — ting!"
+  - spækhuggeren: et legende "wuu-huu!"
+  - hvalen: en langsom, dyb sang
+  
+  Dertil kommer hvalens bløde pust (`spout`), skibsklokken (`bell`) og en fjern hval i havets baggrundslyd cirka hvert halve minut (`whaleCall`, lige til at ane under havets brus).
 - **Temamelodi:** `theme` spiller en kort, hyggelig vals på cirka 5 s, når startboblen popper og kameraet dykker. Melodien ligger på boble-marimba med spilledåse en oktav over og bløde akkorder (C | G | Am | C), og den slutter med en harpe og bobler. Den startes via `audio.whenRunning()`, fordi lyden på iOS kan være ved at starte lige efter første tryk. Kommer lyden ikke i gang inden for 2 s, springes melodien over.
 - **Automatisk tjek:** `tests/aquarium.spec.mjs` → "every sound is soft". Målingen er A-vægtet med en lille højttalers bas-rolloff, se `src/audio/analysis.js`.
   - hver opskrift: peak ≤ −6 dBFS og diskantandel over 5 kHz < 0,12
   - hver effekt (undtagen `whoosh`) mindst **8 dB** over havlydens højeste øjeblik om dagen
-  - om natten mindst 5 dB over (undtagen `brush`)
-  - havlyden: peak ≤ −18 dBFS
-  - spilledåsen om natten: højst 4 dB over dagens havlyd
+  - om natten og i havet mindst 5 dB over
+  - havlyden: peak ≤ −18 dBFS, også i det åbne hav
+  - spilledåsen om natten og hvalerne i havet: højst 4 dB over dagens havlyd
 - **Lytteprøve:** Claude kan ikke selv høre lydene. Når lyde ændres, renderes en lytteprøve offline gennem den rigtige lydkæde (OfflineAudioContext i Playwright → WAV → `afconvert -f m4af -d aac` → m4a), som brugeren kan høre. Spektrogrammer hjælper til selvtjek.
 
 ## Praktiske tips

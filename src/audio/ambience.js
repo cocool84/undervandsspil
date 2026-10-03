@@ -1,12 +1,12 @@
 // Calm underwater ambience: a soft detuned drone through slowly moving filters, a deep
 // "water wash" and the odd tiny bubble. Night lowers and darkens it, and now and then a
-// music box plays a little lullaby. Plays on its own quiet bus, well under the effects,
-// so every tap stands out clearly.
+// music box plays a little lullaby; in the open sea a whale sings far away now and then.
+// Plays on its own quiet bus, well under the effects, so every tap stands out clearly.
 
-import { bloop, musicBox, noteFreq } from './synth.js';
+import { bloop, musicBox, whaleCall, noteFreq } from './synth.js';
 
 // Mix inside the ambience (the bus level is set by the engine).
-const MIX = { drone: 0.3, wash: 0.55, bubbles: 1, music: 1 };
+const MIX = { drone: 0.3, wash: 0.55, bubbles: 1, music: 1, whales: 1 };
 const clampStep = (s) => Math.min(Math.max(s, 5), 12);
 
 function brownNoise(ctx, seconds = 4) {
@@ -27,6 +27,7 @@ export class Ambience {
     this.bus = bus;
     this.started = false;
     this.nightOn = false;
+    this.sea = false;
   }
 
   // `parts` (tests) picks which layers to play: { drone, wash, bubbles }.
@@ -98,14 +99,36 @@ export class Ambience {
     this.bubbleT = t + 1;
     this.musicOut = layer('music');
     this.musicT = t + 5;
+    this.whaleOut = layer('whales');
+    this.whaleT = t + 6;
     if (!live) return;
     this.timer = setInterval(() => {
       const now = this.ctx.currentTime;
       this.bubbleT = Math.max(this.bubbleT, now + 0.05); // never pile up after a long pause
       this.musicT = Math.max(this.musicT, now + 0.05);
+      this.whaleT = Math.max(this.whaleT, now + 0.05);
       this.scheduleBubbles(now + 1.2);
       this.scheduleMusic(now + 1.2);
+      this.scheduleWhales(now + 1.2);
     }, 450);
+  }
+
+  // In the open sea: a whale far away, every half minute or so.
+  scheduleWhales(until, rnd = Math.random) {
+    while (this.whaleT < until) {
+      if (!this.sea) {
+        this.whaleT = until;
+        return;
+      }
+      whaleCall(this.ctx, this.whaleOut, this.whaleT, { note: [0, 1, -1][Math.floor(rnd() * 3)], gain: 0.1 });
+      this.whaleT += 24 + rnd() * 20;
+    }
+  }
+
+  setScene(kind) {
+    const sea = kind === 'ocean';
+    if (sea && !this.sea && this.started) this.whaleT = this.ctx.currentTime + 6; // the first one soon after arriving
+    this.sea = sea;
   }
 
   // Random little groups of bubbles up to time `until` (the tests also render this offline).

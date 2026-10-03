@@ -64,6 +64,11 @@ export class Interaction {
     this.pointers.delete(e.pointerId);
   }
 
+  // Off to the other aquarium: fingers still down there are forgotten.
+  reset() {
+    this.pointers.clear();
+  }
+
   // ---------------------------------------------------------------- picking
 
   pushTouch(point) {
@@ -171,7 +176,15 @@ export class Interaction {
       const now = performance.now();
       const short = now - fish.tunedAt < 650;
       fish.tunedAt = now;
-      if (fish.dna.shape === 3 && !short) {
+      if (fish.animal) {
+        // the big animals have their own songs; the whale blows bubbles, the shark goes nom nom
+        audio.play('animalTune', { kind: fish.dna.shape, trick, base: fish.voice, short });
+        if (trick === 'spout') {
+          world.spout(fish);
+          if (!short) audio.play('spout', {}, 0.1);
+        }
+        if (trick === 'chomp' && !short) audio.play('nom', { gain: 0.15 }, 0.05);
+      } else if (fish.dna.shape === 3 && !short) {
         audio.play('puffup');
         audio.play('fishTune', { trick, base: fish.voice, gain: 0.09 }, 0.22);
       } else {
@@ -260,6 +273,21 @@ export class Interaction {
       case 'rock': {
         world.bubbles.burst(point.x, point.y + 0.2, point.z, 10, 0.4, 0.05, 0.16);
         audio.play('bloop', { note: 1 });
+        break;
+      }
+      case 'ship': {
+        // it rocks, the windows flash, the bell rings — and now and then: treasure!
+        if (world.pokeShip(U.uTime.value)) {
+          audio.play('treasure');
+          this.app.rig.kick.set(0, -0.1, -0.2);
+        }
+        audio.play('bell', { note: 3 + Math.floor(Math.random() * 2) });
+        break;
+      }
+      case 'sardines': {
+        world.sardines.scare(point);
+        world.fx.sparkles(point, 8, 1.2, '#eaf6ff');
+        audio.play('sparkle', { from: 8, count: 6, gain: 0.05, step: 0.035 });
         break;
       }
       case 'kelp': {

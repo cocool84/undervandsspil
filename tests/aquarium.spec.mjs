@@ -217,7 +217,7 @@ async function emptyWater(page) {
 
 test('buttons are big, icon-only and react', async ({ page }, info) => {
   const errors = await startApp(page);
-  for (const id of ['#btn-feed', '#btn-night']) {
+  for (const id of ['#btn-feed', '#btn-night', '#btn-world']) {
     const b = await page.locator(id).boundingBox();
     expect(b.width).toBeGreaterThanOrEqual(96);
   }
@@ -343,20 +343,24 @@ test('a finger gliding through the water leaves a trail that fish follow', async
 
 test('every sound is soft: no loud peaks, little treble, clearly above the ambience', async ({ page }) => {
   await openApp(page, '?autostart');
-  const { recipes, ambience, ambienceNight } = await page.evaluate(() => window.__aq.app.audio.analyze());
-  console.log('ambience', JSON.stringify(ambience), 'night', JSON.stringify(ambienceNight));
+  const { recipes, ambience, ambienceNight, ambienceSea } = await page.evaluate(() => window.__aq.app.audio.analyze());
+  console.log('ambience', JSON.stringify(ambience), 'night', JSON.stringify(ambienceNight), 'sea', JSON.stringify(ambienceSea));
   console.log('sound analysis', JSON.stringify(recipes));
   // the calm bed never pushes the limiter and stays well under every tap; at night the
   // music box lullaby stays gentle too
   expect(ambience.peakDb).toBeLessThanOrEqual(-18);
   expect(ambienceNight.peakDb).toBeLessThanOrEqual(-18);
   expect(ambienceNight.loudest).toBeLessThanOrEqual(ambience.loudest + 4);
+  // in the open sea a whale sings far away now and then — just as gentle
+  expect(ambienceSea.peakDb).toBeLessThanOrEqual(-18);
+  expect(ambienceSea.loudest).toBeLessThanOrEqual(ambience.loudest + 4);
   for (const [name, r] of Object.entries(recipes)) {
     expect(r.peakDb, `${name} peak`).toBeLessThanOrEqual(-6);
     expect(r.trebleRatio, `${name} treble`).toBeLessThan(0.12);
     // (the whoosh is only ever an accent under the day/night chime)
     if (name !== 'whoosh') expect(r.loudness - ambience.loudest, `${name} over ambience`).toBeGreaterThanOrEqual(8);
     if (name !== 'whoosh') expect(r.loudness - ambienceNight.loudest, `${name} over night ambience`).toBeGreaterThanOrEqual(5);
+    if (name !== 'whoosh') expect(r.loudness - ambienceSea.loudest, `${name} over the sea's ambience`).toBeGreaterThanOrEqual(5);
   }
 });
 
@@ -377,8 +381,8 @@ async function openFactory(page) {
 const ownFishDNA = (n, kind = 'design', from = 0) =>
   Array.from({ length: n }, (_, i) => ({ id: `test-${kind}-${from + i}`, born: 1000 + from + i, kind, shape: (from + i) % 4, color: '#3fa9ff', pattern: (from + i) % 4, eyes: (from + i) % 4, glow: true, seed: 5000 + from + i, paint: null, color2: null }));
 
-async function seedFish(page, fish) {
-  await page.evaluate(([key, list]) => localStorage.setItem(key, JSON.stringify({ v: 1, settings: { volume: 0.7 }, fish: list })), [KEY, fish]);
+async function seedFish(page, fish, sea = []) {
+  await page.evaluate(([key, list, seaList]) => localStorage.setItem(key, JSON.stringify({ v: 1, settings: { volume: 0.7 }, fish: list, sea: seaList })), [KEY, fish, sea]);
 }
 
 test('fish factory: shape, paint, pattern, eyes, let it go — and it is saved', async ({ page, browserName }, info) => {
@@ -629,7 +633,7 @@ test("parents' corner: save a copy of our fish as a file — and load it back", 
     g.fillRect(0, 0, 16, 8);
     return c.toDataURL('image/jpeg', 0.8);
   });
-  await seedFish(page, ownFishDNA(3).map((f, i) => ({ ...f, paint: i === 0 ? tinyJpeg : null })));
+  await seedFish(page, ownFishDNA(3).map((f, i) => ({ ...f, paint: i === 0 ? tinyJpeg : null })), seaAnimals(1));
   await page.reload();
   const more = await startApp(page);
   await openParents(page);
@@ -655,6 +659,7 @@ test("parents' corner: save a copy of our fish as a file — and load it back", 
   expect(copy.app).toBe('undervandsspil');
   expect(copy.fish.map((f) => f.id)).toEqual(['test-design-0', 'test-design-1', 'test-design-2']);
   expect(copy.fish[0].paint).toBe(tinyJpeg);
+  expect(copy.sea.map((f) => f.id)).toEqual(['sea-design-0']); // the big animals of the open sea come along
   // …or, without a share sheet, as a download
   await page.evaluate(() => Object.defineProperty(navigator, 'canShare', { configurable: true, value: undefined }));
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('.p-save').click()]);
@@ -664,9 +669,11 @@ test("parents' corner: save a copy of our fish as a file — and load it back", 
   await page.locator('.p-delete').click();
   await page.locator('.p-yes').click();
   expect(await page.evaluate(() => window.__aq.app.population.own.length)).toBe(0);
+  expect(await page.evaluate(() => window.__aq.app.populations.ocean.own.length)).toBe(0);
   await openParents(page);
   await page.setInputFiles('.p-file', { name: 'akvariet.json', mimeType: 'application/json', buffer: Buffer.from(shared.text) });
   await expect.poll(() => page.evaluate(() => window.__aq.app.population.own.length)).toBe(3);
+  expect(await page.evaluate(() => window.__aq.app.populations.ocean.own.map((d) => d.id))).toEqual(['sea-design-0']);
   await expect(page.locator('.p-load')).toHaveClass(/p-ok/);
   expect(await page.evaluate(() => window.__aq.app.population.own[0].paint)).toBe(tinyJpeg);
   await page.evaluate(() => window.__aq.app.population.saving);
@@ -715,5 +722,219 @@ test("parents' corner: the sliders follow a dragging finger", async ({ page, bro
   await page.mouse.move(sea.x + 26 + (sea.width - 52) * 0.9, sea.y + sea.height / 2, { steps: 8 });
   await page.mouse.up();
   expect(await page.evaluate(() => window.__aq.app.audio.ambienceAmount)).toBeCloseTo(0.9, 1);
+  expect(errors).toEqual([]);
+});
+
+// ---------------------------------------------------------------- the open sea
+
+const seaAnimals = (n, kind = 'design', from = 0) =>
+  Array.from({ length: n }, (_, i) => ({ id: `sea-${kind}-${from + i}`, born: 2000 + from + i, kind, shape: 4 + ((from + i) % 4), color: '#ff8a3d', pattern: (from + i) % 4, eyes: (from + i) % 4, glow: true, seed: 6000 + from + i, paint: null, color2: null }));
+
+async function hudReady(page) {
+  await page.waitForFunction(() => !window.__aq.app.busy && document.getElementById('hud').classList.contains('show'));
+  await page.waitForTimeout(400); // the buttons popping in
+}
+
+test('the world button takes us to the open sea and back — and the app remembers where we were', async ({ page }, info) => {
+  const errors = await startApp(page);
+  expect(await page.evaluate(() => window.__aq.app.world.kind)).toBe('reef');
+  await tapEl(page, '#btn-world');
+  await page.waitForFunction(() => window.__aq.app.world.kind === 'ocean' && !window.__aq.app.busy, null, { timeout: 15_000 });
+  // one of each: a dolphin, a shark, an orca and a whale
+  expect((await page.evaluate(() => window.__aq.fish().map((f) => f.shape))).sort()).toEqual([4, 5, 6, 7]);
+  expect(await page.evaluate(() => document.body.innerText.trim())).toBe('');
+  await hudReady(page);
+  await shot(page, info, '60-sea');
+  const stats = await page.evaluate(() => window.__aq.snapshotStats());
+  expect(stats.std, 'the sea should not be blank').toBeGreaterThan(0.04);
+  // remembered: after a reload we are still in the open sea
+  await page.reload();
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  expect(await page.evaluate(() => window.__aq.app.world.kind)).toBe('ocean');
+  const more = await startApp(page);
+  // …and back home to the reef with its eight fish
+  await tapEl(page, '#btn-world');
+  await page.waitForFunction(() => window.__aq.app.world.kind === 'reef' && !window.__aq.app.busy, null, { timeout: 15_000 });
+  expect(await page.evaluate(() => window.__aq.fish().length)).toBe(8);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).settings.world, KEY)).toBe('reef');
+  expect([...errors, ...more]).toEqual([]);
+});
+
+test('the four big animals swim about inside the view and keep moving', async ({ page }, info) => {
+  const errors = await openApp(page, '?autostart&ocean');
+  await page.waitForTimeout(3000);
+  const size = page.viewportSize();
+  let outside = 0;
+  let samples = 0;
+  let moved = 0;
+  let prev = null;
+  for (let i = 0; i < 14; i++) {
+    const fish = await page.evaluate(() => window.__aq.fish());
+    expect(fish.length).toBe(4);
+    for (const f of fish) {
+      samples++;
+      if (f.x < -80 || f.x > size.width + 80 || f.y < -80 || f.y > size.height + 80) outside++;
+    }
+    if (prev) moved += fish.reduce((s, f, k) => s + Math.hypot(f.x - prev[k].x, f.y - prev[k].y), 0) / fish.length;
+    prev = fish;
+    await page.waitForTimeout(500);
+  }
+  expect(outside / samples, 'the animals should stay on screen').toBeLessThan(0.03);
+  expect(moved / 13, 'the animals should be swimming').toBeGreaterThan(4);
+  await shot(page, info, '61-sea-animals');
+  expect(errors).toEqual([]);
+});
+
+test('tapping a big animal: a trick and its own little song — the whale blows bubbles', async ({ page }, info) => {
+  const errors = await startApp(page, '?ocean');
+  const whale = await page.evaluate(() => {
+    const f = window.__aq.app.world.school.fish.find((q) => q.dna.shape === 7);
+    f.trickIndex = 0; // its first trick: the fountain
+    return f.dna.id;
+  });
+  await expect.poll(() => page.evaluate((id) => window.__aq.fish().find((f) => f.id === id).state !== 'enter', whale)).toBe(true);
+  const at = await page.evaluate((id) => window.__aq.fish().find((f) => f.id === id), whale);
+  await page.touchscreen.tap(at.x, at.y);
+  expect(await page.evaluate(() => window.__aq.app.interaction.last)).toMatchObject({ type: 'fish', id: whale, trick: 'spout' });
+  expect(await page.evaluate(() => window.__aq.app.world.spouts.length)).toBe(1);
+  await page.waitForTimeout(450);
+  await shot(page, info, '62-whale-spout');
+  // every animal does a trick when tapped
+  for (const shape of [4, 5, 6]) {
+    const f = await page.evaluate((s) => window.__aq.fish().find((q) => q.shape === s && q.visible), shape);
+    if (!f) continue;
+    await page.touchscreen.tap(f.x, f.y);
+    const last = await page.evaluate(() => window.__aq.app.interaction.last);
+    if (last.type === 'fish') expect(await page.evaluate((id) => window.__aq.fish().find((q) => q.id === id).state, last.id)).toBe('trick');
+  }
+  const audio = await page.evaluate(() => ({ state: window.__aq.app.audio.state, played: window.__aq.app.audio.played }));
+  if (audio.state === 'running') {
+    expect(audio.played.animalTune ?? 0).toBeGreaterThanOrEqual(1);
+    expect(audio.played.spout ?? 0).toBe(1);
+  }
+  expect(errors).toEqual([]);
+});
+
+// Tap a moving thing once nothing swims in front of it. `where` (run in the page) returns
+// its screen position.
+async function tapWhenClear(page, where, type) {
+  for (let i = 0; i < 100; i++) {
+    const at = await page.evaluate(where);
+    if (at && (await page.evaluate(([x, y]) => window.__aq.whatIsAt(x, y), [at.x, at.y])) === type) {
+      await page.touchscreen.tap(at.x, at.y);
+      // (an animal may have just swum in front of it: then try again)
+      if ((await page.evaluate(() => window.__aq.app.interaction.last.type)) === type) return type;
+    }
+    await page.waitForTimeout(250);
+  }
+  return null;
+}
+
+test('the sunken ship rocks and treasure tumbles out — and the little silver fish scatter', async ({ page }, info) => {
+  const errors = await startApp(page, '?ocean');
+  await page.evaluate(() => {
+    window.__aq.app.world.chaseT = 1e9; // no dolphin dashing through the school just now
+  });
+  const ship = () => {
+    const a = window.__aq.app;
+    const v = a.world.ship.hole(a.world.sardines.center.clone());
+    v.project(a.core.camera);
+    return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight };
+  };
+  expect(await tapWhenClear(page, ship, 'ship')).toBe('ship');
+  await expect.poll(() => page.evaluate(() => window.__aq.app.world.treasure.items.length)).toBeGreaterThan(10);
+  await page.waitForTimeout(500);
+  await shot(page, info, '63-ship-treasure');
+  const school = () => {
+    const a = window.__aq.app;
+    const v = a.world.sardines.center.clone().project(a.core.camera);
+    return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight };
+  };
+  expect(await tapWhenClear(page, school, 'sardines')).toBe('sardines');
+  expect(await page.evaluate(() => window.__aq.app.world.sardines.lastScare)).toBeGreaterThan(0);
+  await page.waitForTimeout(400);
+  await shot(page, info, '64-sardines-scatter');
+  expect(errors).toEqual([]);
+});
+
+test('in the open sea the fish factory makes big animals — saved in the sea, not the reef', async ({ page }, info) => {
+  const errors = await startApp(page, '?ocean');
+  await openFactory(page);
+  expect(await page.evaluate(() => window.__aq.app.factory.draft.shape)).toBeGreaterThanOrEqual(4);
+  await tapEl(page, '.fac-options-0 .fac-opt:nth-child(3)'); // the orca
+  expect(await page.evaluate(() => window.__aq.app.factory.draft.shape)).toBe(6);
+  await tapEl(page, '.fac-next');
+  await tapEl(page, '.fac-options-1 .fac-blob:nth-child(3)'); // pink
+  await page.waitForTimeout(500);
+  await shot(page, info, '65-factory-orca');
+  for (let i = 0; i < 3; i++) await tapEl(page, '.fac-next');
+  await tapEl(page, '.fac-release');
+  await page.waitForFunction(() => window.__aq.app.view === 'aquarium' && !window.__aq.app.busy, null, { timeout: 10_000 });
+  expect(await page.evaluate(() => window.__aq.app.populations.ocean.own.map((d) => ({ shape: d.shape, color: d.color })))).toEqual([{ shape: 6, color: '#ff5d8f' }]);
+  expect(await page.evaluate(() => window.__aq.app.populations.reef.own.length)).toBe(0);
+  await expect.poll(() => page.evaluate(() => window.__aq.fish().find((f) => f.kind === 'design')?.state), { timeout: 8000 }).toMatch(/gaze|wander|curious/);
+  expect(await page.evaluate(() => window.__aq.fish().length)).toBe(5);
+  await shot(page, info, '66-new-orca');
+  // the wand makes big animals here too
+  await openFactory(page);
+  await tapEl(page, '.fac-wand');
+  await expect.poll(() => page.evaluate(() => window.__aq.app.factory.step)).toBe(4);
+  expect(await page.evaluate(() => window.__aq.app.factory.draft.shape)).toBeGreaterThanOrEqual(4);
+  await tapEl(page, '.fac-home');
+  await page.waitForFunction(() => window.__aq.app.view === 'aquarium' && !window.__aq.app.busy);
+  // saved under the sea: after a reload it is still swimming there
+  await page.evaluate(() => window.__aq.app.populations.ocean.saving);
+  const stored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), KEY);
+  expect(stored.sea.map((d) => d.shape)).toEqual([6]);
+  expect(stored.fish).toEqual([]);
+  await page.reload();
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.kind === 'design').map((f) => f.shape))).toEqual([6]);
+  expect(errors).toEqual([]);
+});
+
+test('never more than 8 big animals: the starters make room first', async ({ page }) => {
+  const errors = await openApp(page, '?autostart&ocean');
+  await seedFish(page, [], seaAnimals(4));
+  await page.reload();
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  expect(await page.evaluate(() => window.__aq.fish().length)).toBe(8);
+  await page.evaluate(() => window.__aq.app.population.release({ id: 'new-sea-1', born: Date.now(), kind: 'design', shape: 7, color: '#35d07f', pattern: 0, eyes: 0, glow: true, seed: 11, paint: null }));
+  expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.state === 'leave').map((f) => f.kind))).toEqual(['starter']);
+  await expect.poll(() => page.evaluate(() => window.__aq.fish().length), { timeout: 25_000 }).toBe(8);
+  expect(errors).toEqual([]);
+});
+
+test('the open sea stays within the budget — also with 8 painted big animals (?fill)', async ({ page }, info) => {
+  const errors = await openApp(page, '?autostart&ocean&fill=8');
+  await page.waitForTimeout(4000);
+  expect(await page.evaluate(() => window.__aq.fish().length)).toBe(8);
+  const perf = await page.evaluate(() => window.__aq.perf());
+  console.log(`[${info.project.name}] sea fill=8 perf`, JSON.stringify({ calls: perf.sceneCalls, tris: perf.sceneTriangles, tier: perf.tier }));
+  expect(perf.sceneCalls).toBeLessThanOrEqual(90);
+  expect(perf.sceneTriangles).toBeLessThanOrEqual(250_000);
+  await shot(page, info, '67-sea-fill-8');
+  expect(errors).toEqual([]);
+});
+
+test('the open sea at night: glowing portholes and animals', async ({ page }, info) => {
+  const errors = await openApp(page, '?autostart&ocean&night');
+  await page.waitForTimeout(4000);
+  await shot(page, info, '68-sea-night');
+  const stats = await page.evaluate(() => window.__aq.snapshotStats());
+  expect(stats.mean, 'night should be darker than day').toBeLessThan(0.35);
+  expect(errors).toEqual([]);
+});
+
+test('big animals QA grid: every animal, with and without patterns', async ({ page }, info) => {
+  test.skip(!info.project.name.endsWith('landscape'), 'grid is laid out for landscape');
+  const errors = await openApp(page, '?autostart&fishgrid=animals');
+  await page.waitForTimeout(2500);
+  expect(await page.evaluate(() => window.__aq.app.world.kind)).toBe('ocean');
+  await shot(page, info, '69-animals-grid');
+  await page.goto('/?autostart&fishgrid=animals2');
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await page.waitForTimeout(2500);
+  await shot(page, info, '69-animals-grid-patterns');
   expect(errors).toEqual([]);
 });

@@ -359,6 +359,34 @@ button {
   bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
 }
 
+/* off to the other aquarium: the button is a window onto it */
+#btn-world {
+  left: calc(env(safe-area-inset-left, 0px) + 270px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+  background:
+    radial-gradient(circle at 31% 25%, rgba(255, 255, 255, 0.95) 0 6%, rgba(255, 255, 255, 0) 15%),
+    radial-gradient(circle at 50% 42%, #7fc8ff 0%, #2f7fd6 55%, #123f8f 100%);
+}
+
+#btn-world.to-reef {
+  background:
+    radial-gradient(circle at 31% 25%, rgba(255, 255, 255, 0.95) 0 6%, rgba(255, 255, 255, 0) 15%),
+    radial-gradient(circle at 50% 42%, #d8fff6 0%, #69e0d2 52%, #1fa3b0 100%);
+}
+
+.hud.show #btn-world { transition-delay: 0.12s; }
+
+#btn-world svg {
+  width: 84%;
+  height: 84%;
+  animation: world-bob 3.6s ease-in-out infinite;
+}
+
+@keyframes world-bob {
+  0%, 100% { transform: translateY(1px) rotate(-3deg); }
+  50% { transform: translateY(-3px) rotate(3deg); }
+}
+
 .hud-mini {
   width: 62px;
   height: 62px;
@@ -521,6 +549,9 @@ button {
 }
 
 .wipe.run i { animation: wipe-rise var(--dur) cubic-bezier(0.35, 0.05, 0.55, 1) var(--delay) both; }
+
+.wipe.hold::before,
+.wipe.hold i { animation-play-state: paused; }
 
 @keyframes wipe-rise {
   from { transform: translateY(110%) scale(0.8); }

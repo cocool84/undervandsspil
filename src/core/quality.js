@@ -50,6 +50,14 @@ export class Quality {
     this.settle = Math.max(this.settle, seconds);
   }
 
+  // Something heavy happened on purpose (a new aquarium was just built): do not judge the
+  // device by the next few frames.
+  forgive(seconds = 2) {
+    this.settleFor(seconds);
+    this.cooldown = Math.max(this.cooldown, seconds);
+    this.longFrames = 0;
+  }
+
   // dtMs: interval since the last rendered frame.
   frame(dtMs, dtSec, now) {
     if (dtMs > 250) {

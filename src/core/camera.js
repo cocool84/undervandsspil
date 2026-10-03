@@ -77,6 +77,13 @@ export class CameraRig {
     this.diveT = 0;
   }
 
+  // Arriving in the other aquarium: the same dive from just under the surface, a bit quicker.
+  dive(duration = 2.2) {
+    this.mode = 'dive';
+    this.diveT = 0;
+    this.diveDuration = duration;
+  }
+
   get diveProgress() {
     if (this.mode === 'start') return 0;
     if (this.mode === 'live') return 1;

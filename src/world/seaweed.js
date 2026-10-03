@@ -140,7 +140,32 @@ function buildMesh(material, segments, items) {
   return mesh;
 }
 
-export function createSeaweed(r) {
+// The reef's kelp clusters: x, z, count, radius, minH, maxH, palette
+const REEF_KELP = [
+  [-7.8, -2.8, 5, 1.2, 4.5, 8, 0],
+  [-10.8, 1.4, 3, 0.9, 3.5, 6, 1],
+  [7.6, -4.8, 4, 1.1, 5, 8.5, 0],
+  [10.6, 0.4, 3, 0.9, 3.5, 6, 2],
+  [-3.4, -11.5, 4, 1.4, 5, 9, 1],
+  [5.0, -13, 4, 1.4, 6, 10, 0],
+  [-12.5, -10, 4, 1.8, 6, 10, 3],
+  [13.5, -14, 4, 1.8, 7, 11, 0],
+  [-5.4, -7.0, 2, 0.6, 3.5, 6, 3],
+  [11.8, -7.6, 3, 0.9, 4, 7, 2],
+  // foreground fronds framing the view (soft, out of focus)
+  [-6.4, 10.6, 2, 0.5, 4, 6, 0],
+  [6.8, 11.2, 2, 0.5, 4, 6, 1],
+];
+// …and its sea grass: x, z, count, radius
+const REEF_GRASS = [
+  [-4.8, 1.0, 14, 1.6], [0.2, 2.6, 10, 1.4], [-1.6, -1.6, 10, 1.4], [5.0, 1.6, 10, 1.2],
+  [-8.0, 3.6, 12, 1.6], [8.6, 3.2, 12, 1.6], [3.2, -3.0, 8, 1.2], [-6.8, -6.4, 10, 1.8],
+  [-2.4, 6.6, 8, 1.2], [1.8, 7.0, 8, 1.2],
+];
+
+// `layout` (the open sea has its own): kelp clusters, grass spots, kelp palettes and
+// rectangles to keep clear ([x, z, half width, half depth]).
+export function createSeaweed(r, { kelp: clusters = REEF_KELP, grass: grassSpots = REEF_GRASS, palettes = PALETTES, clear = [[2.0, 0.9, 1.6, 1.3]] } = {}) {
   const pushers = Array.from({ length: MAX_PUSHERS }, () => new THREE.Vector4(0, -100, 0, 0));
   const material = new THREE.ShaderMaterial({
     name: 'Seaweed',
@@ -150,22 +175,6 @@ export function createSeaweed(r) {
     side: THREE.DoubleSide,
   });
 
-  // kelp clusters: x, z, count, radius, minH, maxH, palette
-  const clusters = [
-    [-7.8, -2.8, 5, 1.2, 4.5, 8, 0],
-    [-10.8, 1.4, 3, 0.9, 3.5, 6, 1],
-    [7.6, -4.8, 4, 1.1, 5, 8.5, 0],
-    [10.6, 0.4, 3, 0.9, 3.5, 6, 2],
-    [-3.4, -11.5, 4, 1.4, 5, 9, 1],
-    [5.0, -13, 4, 1.4, 6, 10, 0],
-    [-12.5, -10, 4, 1.8, 6, 10, 3],
-    [13.5, -14, 4, 1.8, 7, 11, 0],
-    [-5.4, -7.0, 2, 0.6, 3.5, 6, 3],
-    [11.8, -7.6, 3, 0.9, 4, 7, 2],
-    // foreground fronds framing the view (soft, out of focus)
-    [-6.4, 10.6, 2, 0.5, 4, 6, 0],
-    [6.8, 11.2, 2, 0.5, 4, 6, 1],
-  ];
   const kelp = [];
   for (const [cx, cz, count, rad, h0, h1, pal] of clusters) {
     for (let i = 0; i < count; i++) {
@@ -179,7 +188,7 @@ export function createSeaweed(r) {
         phase: r(),
         stiff: rand(r, 0.9, 1.3),
         rot: rand(r, -0.55, 0.55), // broad side towards the viewer
-        colors: PALETTES[pal],
+        colors: palettes[pal],
         hue: rand(r, -0.03, 0.03),
         light: rand(r, -0.04, 0.04),
       });
@@ -187,18 +196,13 @@ export function createSeaweed(r) {
   }
 
   const grass = [];
-  const grassSpots = [
-    [-4.8, 1.0, 14, 1.6], [0.2, 2.6, 10, 1.4], [-1.6, -1.6, 10, 1.4], [5.0, 1.6, 10, 1.2],
-    [-8.0, 3.6, 12, 1.6], [8.6, 3.2, 12, 1.6], [3.2, -3.0, 8, 1.2], [-6.8, -6.4, 10, 1.8],
-    [-2.4, 6.6, 8, 1.2], [1.8, 7.0, 8, 1.2],
-  ];
   for (const [cx, cz, count, rad] of grassSpots) {
     for (let i = 0; i < count; i++) {
       const a = rand(r, 0, TAU);
       const d = Math.sqrt(r()) * rad;
       const x = cx + Math.cos(a) * d;
       const z = cz + Math.sin(a) * d;
-      if (Math.abs(x - 2.0) < 1.6 && Math.abs(z - 0.9) < 1.3) continue; // chest
+      if (clear.some(([cx2, cz2, w, d]) => Math.abs(x - cx2) < w && Math.abs(z - cz2) < d)) continue; // chest, ship
       grass.push({
         x,
         z,
@@ -207,7 +211,7 @@ export function createSeaweed(r) {
         phase: r(),
         stiff: rand(r, 0.7, 1.0),
         rot: rand(r, 0, TAU),
-        colors: r() < 0.82 ? GRASS : pick(r, PALETTES),
+        colors: r() < 0.82 ? GRASS : pick(r, palettes),
         hue: rand(r, -0.04, 0.04),
         light: rand(r, -0.05, 0.05),
       });

@@ -1,5 +1,6 @@
 // The sandy floor: soft dunes rising into hills at the back, ripples, glittering grains,
-// rainbow-edged caustics and soft contact shadows around rocks, corals and the chest.
+// rainbow-edged caustics and soft contact shadows around rocks, corals and the chest. The
+// open sea has its own floor: a pale sandy shelf that drops away into the deep blue.
 
 import * as THREE from 'three';
 import { fbm2, noise2 } from '../util/noise.js';
@@ -9,8 +10,8 @@ import { withShared } from '../core/uniforms.js';
 
 export const MAX_OCCLUDERS = 16;
 
-// Height of the floor at (x, z). Also used to place things on the sand.
-export function sandHeight(x, z) {
+// The reef's floor at (x, z).
+function reefHeight(x, z) {
   let h = 0.36 * fbm2(x * 0.055 + 11.3, z * 0.055 - 4.1, 3);
   h += 0.1 * noise2(x * 0.19 + 3.1, z * 0.16 - 1.3);
   const back = smoothstep(-9, -60, z);
@@ -18,6 +19,29 @@ export function sandHeight(x, z) {
   h += smoothstep(13, 45, Math.abs(x)) * (2.2 + 1.6 * noise2(z * 0.05, x * 0.02));
   h -= 0.22 * Math.exp(-((x * x) / 60 + ((z - 2) * (z - 2)) / 40));
   return h;
+}
+
+// The open sea's floor: a gently rippled shelf with rocky slopes at the sides, falling away
+// at the back into the deep — nothing there but blue.
+function oceanHeight(x, z) {
+  let h = 0.3 * fbm2(x * 0.05 + 3.7, z * 0.05 + 8.2, 3) + 0.08 * noise2(x * 0.21 + 1.7, z * 0.18 - 5.2);
+  const deep = smoothstep(-14, -40, z);
+  h -= deep * (10 + 5 * fbm2(x * 0.03 - 2.1, z * 0.03 + 4.4, 2));
+  h += smoothstep(12, 38, Math.abs(x)) * (2.6 + 2.2 * noise2(z * 0.05 + 9.1, x * 0.02)) * (1 - deep * 0.6);
+  return h;
+}
+
+let ground = reefHeight;
+
+// Which floor sandHeight() describes: the world being shown (and, while one is being built,
+// that one).
+export function setTerrain(kind) {
+  ground = kind === 'ocean' ? oceanHeight : reefHeight;
+}
+
+// Height of the floor at (x, z). Also used to place things on the sand.
+export function sandHeight(x, z) {
+  return ground(x, z);
 }
 
 const VERT = /* glsl */ `
@@ -84,7 +108,7 @@ void main() {
 }
 `;
 
-export function createSand() {
+export function createSand({ light = '#ffecc8', dark = '#e8c592' } = {}) {
   const geo = new THREE.PlaneGeometry(150, 100, 150, 110);
   geo.rotateX(-Math.PI / 2);
   geo.translate(0, 0, -30); // z from -80 to +20
@@ -109,8 +133,8 @@ export function createSand() {
   const mat = new THREE.ShaderMaterial({
     name: 'Sand',
     uniforms: withShared({
-      uSandLight: { value: new THREE.Color('#ffecc8') },
-      uSandDark: { value: new THREE.Color('#e8c592') },
+      uSandLight: { value: new THREE.Color(light) },
+      uSandDark: { value: new THREE.Color(dark) },
     }),
     vertexShader: VERT,
     fragmentShader: FRAG,

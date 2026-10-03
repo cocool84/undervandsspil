@@ -1,5 +1,7 @@
 // A curtain of bubbles rushing up the screen. It hides the switch between the aquarium and
-// the fish factory: `play(onCover)` calls onCover when the screen is fully covered.
+// the fish factory (and between the two aquariums): `play(onCover)` calls onCover when the
+// screen is fully covered. If onCover returns a promise (a new aquarium still being built),
+// the bubbles hold still until it is ready.
 
 export class BubbleWipe {
   constructor() {
@@ -27,12 +29,19 @@ export class BubbleWipe {
     void this.el.offsetWidth; // restart the CSS animations
     this.el.classList.add('run');
     return new Promise((resolve) => {
-      setTimeout(() => onCover?.(), 520);
-      setTimeout(() => {
-        this.el.classList.remove('run');
-        this.busy = false;
-        resolve(true);
-      }, 1350);
+      setTimeout(async () => {
+        const wait = onCover?.();
+        if (wait?.then) {
+          this.el.classList.add('hold');
+          await wait.catch(() => {});
+          this.el.classList.remove('hold');
+        }
+        setTimeout(() => {
+          this.el.classList.remove('run');
+          this.busy = false;
+          resolve(true);
+        }, 830);
+      }, 520);
     });
   }
 }

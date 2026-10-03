@@ -4,15 +4,13 @@
 
 import * as THREE from 'three';
 import { Fish, wrapAngle } from './fish.js';
-import { makeDNA } from './dna.js';
+import { makeDNA, SEA_STARTERS } from './dna.js';
 import { sandHeight } from '../world/sand.js';
 import { WORLD, flags } from '../config.js';
 import { clamp } from '../util/math.js';
 
 export const MAX_FISH = 25;
 export const MIN_FISH = 8;
-const Z_MIN = -6;
-const Z_MAX = 4;
 
 const _ndc = new THREE.Vector3();
 const _tmp = new THREE.Vector3();
@@ -21,8 +19,11 @@ const _right = new THREE.Vector3();
 const _b = { xMin: 0, xMax: 0, yMin: 0, yMax: 0 };
 
 export class School {
-  constructor({ scene, rig, shadows, pushers, obstacles }) {
+  // zMin/zMax: how far back and forward they swim. grid: the ?fishgrid QA layout to show.
+  constructor({ scene, rig, shadows, pushers, obstacles, zMin = -6, zMax = 4, grid = flags.fishgrid ? new URLSearchParams(location.search).get('fishgrid') || 'patterns' : null }) {
     this.scene = scene;
+    this.zMin = zMin;
+    this.zMax = zMax;
     this.rig = rig;
     this.shadows = shadows;
     this.pushers = pushers;
@@ -36,7 +37,8 @@ export class School {
     this.onLeave = null; // (fish) => void — a fish starts waving goodbye
     this.onGone = null; // (fish) => void — a fish has swum out of the aquarium
     this.foodScan = 0;
-    this.grid = flags.fishgrid ? (new URLSearchParams(location.search).get('fishgrid') || 'patterns') : null;
+    this.gridYaw = -0.5;
+    this.grid = grid;
     if (this.grid) this.buildGrid(this.grid);
   }
 
@@ -52,7 +54,7 @@ export class School {
   }
 
   randomSpot(out) {
-    const z = Z_MIN + 1 + Math.random() * (Z_MAX - Z_MIN - 2);
+    const z = this.zMin + 1 + Math.random() * (this.zMax - this.zMin - 2);
     const b = this.boundsAt(z);
     const floor = Math.max(b.yMin, 1.5);
     out.set(b.xMin + 2 + Math.random() * (b.xMax - b.xMin - 4), floor + 1 + Math.random() * Math.max(b.yMax - floor - 2, 0.5), z);
@@ -105,6 +107,18 @@ export class School {
   // ---------------------------------------------------------------- QA grid (?fishgrid)
 
   buildGrid(mode) {
+    if (mode.startsWith('animals')) {
+      // the four big animals, two by two (…=animals2: with patterns and other eyes)
+      SEA_STARTERS.forEach((starter, i) => {
+        const dna = mode === 'animals2' ? makeDNA({ ...starter, id: `grid-${i}`, pattern: 1 + (i % 3), eyes: (i + 1) % 4, color: ['#ff8a3d', '#35d07f', '#ff5d8f', '#9b6bff'][i] }) : starter;
+        const f = this.add(dna, { spawn: 'none' });
+        f.gridSpot = new THREE.Vector3((i % 2 ? 1 : -1) * 3.4, 7.7 - Math.floor(i / 2) * 4.0, 8);
+        f.pos.copy(f.gridSpot);
+        f.vel.set(0.001, 0, 0);
+        f.yaw = -0.5;
+      });
+      return;
+    }
     const colors = ['#ff8a3d', '#3fa9ff', '#ffd23f', '#ff5d8f'];
     for (let row = 0; row < 4; row++) {
       for (let col = 0; col < 4; col++) {
@@ -264,8 +278,8 @@ export class School {
     if (p.x < b.xMin + m) acc.x += (b.xMin + m - p.x) * 3.2;
     if (p.y < floor + 0.5) acc.y += (floor + 0.5 - p.y) * 4;
     if (p.y > b.yMax - 0.5) acc.y -= (p.y - (b.yMax - 0.5)) * 4;
-    if (p.z > Z_MAX - 1) acc.z -= (p.z - (Z_MAX - 1)) * 3;
-    if (p.z < Z_MIN + 1) acc.z += (Z_MIN + 1 - p.z) * 3;
+    if (p.z > this.zMax - 1) acc.z -= (p.z - (this.zMax - 1)) * 3;
+    if (p.z < this.zMin + 1) acc.z += (this.zMin + 1 - p.z) * 3;
 
     // rocks, chest and coral clumps
     for (const o of this.obstacles) {
@@ -314,8 +328,8 @@ export class School {
         f.vel.set(0.0001, 0, 0);
         f.pos.copy(f.gridSpot);
         f.integrate(t, dt, camera, night);
-        f.yaw = -0.5;
-        f.mesh.rotation.set(0, -0.5, 0);
+        f.yaw = this.gridYaw;
+        f.mesh.rotation.set(0, this.gridYaw, 0);
         f.swimAmp = f.meta.def.swimAmp * 0.8;
       }
       return;
@@ -331,7 +345,7 @@ export class School {
       const b = this.boundsAt(f.pos.z);
       f.pos.x = clamp(f.pos.x, b.xMin - 3, b.xMax + 3);
       f.pos.y = clamp(f.pos.y, sandHeight(f.pos.x, f.pos.z) + 0.6, WORLD.surfaceY - 0.8);
-      f.pos.z = clamp(f.pos.z, Z_MIN - 1, Z_MAX + 1);
+      f.pos.z = clamp(f.pos.z, this.zMin - 1, this.zMax + 1);
     }
 
     // shadows and seaweed parting

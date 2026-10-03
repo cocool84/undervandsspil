@@ -1,7 +1,9 @@
 // The fish factory: make your own fish in five steps — shape, paint, pattern, eyes, and let
-// it go! The fish turns slowly on its shell, holds still while it is being painted, looks at
+// it go! The fish turns slowly on the stage, holds still while it is being painted, looks at
 // the painting finger and hops happily at every change. The magic wand makes a surprise fish
-// in one tap. The unfinished fish (the draft) is remembered.
+// in one tap. The unfinished fish (the draft) is remembered. Opened from the open sea it
+// makes big animals instead (dolphin, shark, orca, whale) — the draft follows along: the
+// same colours and painting on the matching animal.
 
 import * as THREE from 'three';
 import { Fish, fishGeometry } from '../fish/fish.js';
@@ -44,6 +46,7 @@ export class Factory {
     });
     this.draft = { ...freshDraft(), ...(draft || {}) };
     this.step = this.draft.step ?? 0;
+    this.sea = this.draft.shape >= SHAPES.length; // making big animals for the open sea
     this.fish = null;
     this.extraYaw = 0;
     this.yawGoal = 0; // where the turning comes to rest: a whole number of turns
@@ -132,12 +135,23 @@ export class Factory {
 
   syncUI() {
     const d = this.draft;
-    this.ui.setSelection({ shape: d.shape, colorIndex: PAINT_COLORS.indexOf(d.brush), pattern: d.pattern, eyes: d.eyes, color: d.color });
+    this.ui.setSea(this.sea);
+    this.ui.setSelection({ shape: d.shape % SHAPES.length, colorIndex: PAINT_COLORS.indexOf(d.brush), pattern: d.pattern, eyes: d.eyes, color: d.color });
+  }
+
+  // Fish for the reef or big animals for the open sea.
+  setSea(sea) {
+    if (sea === this.sea) return;
+    this.sea = sea;
+    this.draft.shape = (this.draft.shape % SHAPES.length) + (sea ? SHAPES.length : 0);
+    this.buildFish();
+    this.syncUI();
   }
 
   // ---------------------------------------------------------------- open / close
 
-  show() {
+  show(kind = 'reef') {
+    this.setSea(kind === 'ocean');
     this.isOpen = true;
     this.leaving = null;
     this.ui.setLocked(false);
@@ -157,6 +171,7 @@ export class Factory {
   // After a release: a brand-new blank fish waits for next time.
   reset() {
     this.draft = freshDraft();
+    if (this.sea) this.draft.shape = SHAPES.length;
     this.step = 0;
     this.painter.clear();
     this.painter.setBase(this.draft.color);
@@ -199,8 +214,9 @@ export class Factory {
     const { audio } = this.app;
     d.kind = 'design';
     if (kind === 'shape') {
-      if (d.shape !== i) {
-        d.shape = i;
+      const shape = i + (this.sea ? SHAPES.length : 0);
+      if (d.shape !== shape) {
+        d.shape = shape;
         this.buildFish();
       }
       audio.play('morph', { note: [6, 7, 6, 5][i] });
@@ -263,7 +279,7 @@ export class Factory {
     const r = Math.random;
     const d = this.draft;
     const pick = (arr) => arr[Math.floor(r() * arr.length)];
-    d.shape = Math.floor(r() * SHAPES.length);
+    d.shape = Math.floor(r() * SHAPES.length) + (this.sea ? SHAPES.length : 0);
     d.colorIndex = Math.floor(r() * 8);
     d.color = PAINT_COLORS[d.colorIndex];
     d.eyes = Math.floor(r() * EYES.length);
@@ -326,7 +342,7 @@ export class Factory {
       mode = 'tap';
       this.hop(1);
       this.sparkle(6);
-      this.app.audio.play('fishTune', { base: this.fish.voice, short: true });
+      this.app.sing(this.fish, undefined, { short: true });
     }
     this.pointers.set(e.pointerId, { mode, x: e.clientX, t: performance.now() });
   }
@@ -462,7 +478,8 @@ export class Factory {
     this.rock = damp(this.rock ?? 1, painting || this.step === 1 ? 0.25 : 1, 3, dt);
     const yaw = this.baseYaw + Math.sin(t * 0.55) * 0.42 * this.rock + this.extraYaw;
     const pitch = Math.sin(t * 0.8) * 0.05 * this.rock;
-    const roll = Math.sin(t * 0.67) * 0.05 * this.rock;
+    // (a big animal leans its back a little towards the child, so its flat flukes show)
+    const roll = Math.sin(t * 0.67) * 0.05 * this.rock + (this.sea ? 0.3 : 0);
     fish.still = painting;
 
     // where it looks: at the painting finger, else mostly at the child

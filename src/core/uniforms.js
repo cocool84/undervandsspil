@@ -61,10 +61,48 @@ const NIGHT = {
   sun: new THREE.Vector3(0.38, 1, 0.12).normalize(),
 };
 
+// The open sea: deeper and clearer blue, less turquoise than the reef.
+const OCEAN_DAY = {
+  key: col('#fff5e2', 1.1),
+  sky: col('#b6e4ff', 0.56),
+  ground: col('#2c5c9c', 0.4),
+  rim: col('#a8e6ff', 0.3),
+  top: col('#86d9ff'),
+  mid: col('#1d82cf'),
+  deep: col('#062c6c'),
+  glow: col('#fff3d0', 0.9),
+  caustics: 1.0,
+  fog: 0.024,
+  sun: DAY.sun,
+};
+
+const OCEAN_NIGHT = {
+  key: col('#93b2ff', 0.34),
+  sky: col('#30509e', 0.33),
+  ground: col('#0a173c', 0.3),
+  rim: col('#72b8ff', 0.26),
+  top: col('#244684'),
+  mid: col('#0b2353'),
+  deep: col('#030a22'),
+  glow: col('#d6e4ff', 0.6),
+  caustics: 0.3,
+  fog: 0.032,
+  sun: NIGHT.sun,
+};
+
+const PALETTES = { reef: [DAY, NIGHT], ocean: [OCEAN_DAY, OCEAN_NIGHT] };
+
 const env = {
   nightLinear: 0,
   nightTarget: 0,
+  day: DAY,
+  night: NIGHT,
 };
+
+// The water's colours and light for the world on screen ('reef' | 'ocean').
+export function setPalette(kind) {
+  [env.day, env.night] = PALETTES[kind] ?? PALETTES.reef;
+}
 
 export function setNight(on, instant = false) {
   env.nightTarget = on ? 1 : 0;
@@ -88,18 +126,20 @@ export function updateEnvironment(t, dt) {
   env.nightLinear = clamp(env.nightLinear + Math.sign(env.nightTarget - env.nightLinear) * step, 0, 1);
   if (Math.abs(env.nightLinear - env.nightTarget) < step) env.nightLinear = env.nightTarget;
   const n = smoothstep(0, 1, env.nightLinear);
+  const day = env.day;
+  const night = env.night;
   U.uNight.value = n;
-  mixColor(U.uKeyColor.value, DAY.key, NIGHT.key, n);
-  mixColor(U.uSkyAmb.value, DAY.sky, NIGHT.sky, n);
-  mixColor(U.uGroundAmb.value, DAY.ground, NIGHT.ground, n);
-  mixColor(U.uRimColor.value, DAY.rim, NIGHT.rim, n);
-  mixColor(U.uWaterTop.value, DAY.top, NIGHT.top, n);
-  mixColor(U.uWaterMid.value, DAY.mid, NIGHT.mid, n);
-  mixColor(U.uWaterDeep.value, DAY.deep, NIGHT.deep, n);
-  mixColor(U.uSunGlow.value, DAY.glow, NIGHT.glow, n);
-  U.uCausticsStrength.value = DAY.caustics + (NIGHT.caustics - DAY.caustics) * n;
-  U.uFogDensity.value = DAY.fog + (NIGHT.fog - DAY.fog) * n;
-  U.uSunDir.value.lerpVectors(DAY.sun, NIGHT.sun, n).normalize();
+  mixColor(U.uKeyColor.value, day.key, night.key, n);
+  mixColor(U.uSkyAmb.value, day.sky, night.sky, n);
+  mixColor(U.uGroundAmb.value, day.ground, night.ground, n);
+  mixColor(U.uRimColor.value, day.rim, night.rim, n);
+  mixColor(U.uWaterTop.value, day.top, night.top, n);
+  mixColor(U.uWaterMid.value, day.mid, night.mid, n);
+  mixColor(U.uWaterDeep.value, day.deep, night.deep, n);
+  mixColor(U.uSunGlow.value, day.glow, night.glow, n);
+  U.uCausticsStrength.value = day.caustics + (night.caustics - day.caustics) * n;
+  U.uFogDensity.value = day.fog + (night.fog - day.fog) * n;
+  U.uSunDir.value.lerpVectors(day.sun, night.sun, n).normalize();
 }
 
 // Build a uniforms object for a material: shared references plus its own entries.

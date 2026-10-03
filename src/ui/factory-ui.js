@@ -2,8 +2,8 @@
 // back/next arrows, the choices for the current step at the bottom, a magic wand and a
 // home button. Icons only. Everything reacts on pointerdown with a squishy press.
 
-import { ICONS, shapeIcon, patternIcon, eyeIcon, blobIcon } from './icons.js';
-import { SHAPES, PATTERNS, EYES, PAINT_COLORS } from '../fish/dna.js';
+import { ICONS, shapeIcon, animalIcon, patternIcon, eyeIcon, blobIcon } from './icons.js';
+import { SHAPES, ANIMALS, PATTERNS, EYES, PAINT_COLORS } from '../fish/dna.js';
 
 const STEP_ICONS = [ICONS.stepShape, ICONS.stepPaint, ICONS.stepPattern, ICONS.stepEyes, ICONS.stepRelease];
 
@@ -46,6 +46,18 @@ export class FactoryUI {
     this.release = this.button('fac-release', rel, ICONS.release, () => this.h.onRelease());
     this.groups.push({ el: rel, btns: [this.release] });
     this.step = -1;
+    this.sea = false;
+  }
+
+  // In the open sea the factory makes big animals: other shapes to choose from.
+  setSea(sea) {
+    if (sea === this.sea) return;
+    this.sea = sea;
+    this.groups[0].btns.forEach((b, i) => {
+      b.innerHTML = sea ? animalIcon(ANIMALS[i]) : shapeIcon(SHAPES[i]);
+    });
+    this.stepBtns[0].innerHTML = sea ? ICONS.stepShapeSea : ICONS.stepShape;
+    this.el.classList.toggle('sea', sea);
   }
 
   button(cls, parent, icon, fn) {
