@@ -17,11 +17,13 @@ import { Crab } from './crab.js';
 import { Jellyfish } from './jellyfish.js';
 import { Plankton } from '../particles/plankton.js';
 import { Bubbles } from '../particles/bubbles.js';
+import { Shadows } from '../particles/shadows.js';
+import { School } from '../fish/school.js';
 
 const _v = new THREE.Vector3();
 
 export class World {
-  constructor(core) {
+  constructor(core, rig) {
     this.core = core;
     const scene = core.scene;
     const r = mulberry32(WORLD.layoutSeed);
@@ -52,6 +54,16 @@ export class World {
       ...this.corals.occluders,
       [2.0, 0.9, 1.7], // chest
     ]);
+
+    this.shadows = new Shadows(U.uNight);
+    scene.add(this.shadows.mesh);
+    const obstacles = [
+      ...this.rocks.spheres,
+      ...this.corals.occluders.map(([x, z, r]) => ({ x, y: sandHeight(x, z) + r * 0.7, z, r: r * 0.85 })),
+      { x: 2.0, y: sandHeight(2.0, 0.9) + 0.8, z: 0.9, r: 1.45 }, // chest
+    ];
+    this.school = new School({ scene, rig, shadows: this.shadows, pushers: this.seaweed.pushers, obstacles });
+    if (!this.school.grid) this.school.addStarters();
 
     this.chest.onBubbles = (p) => this.bubbles.spawn(p.x, p.y, p.z, 0.05 + Math.random() * 0.1, 1.1 + Math.random() * 0.6, 0.05);
 
@@ -91,6 +103,12 @@ export class World {
 
     this.chest.update(t, dt);
     this.crab.update(t, dt, camera);
+    this.school.update(t, dt, camera, U.uNight.value > 0.5);
+    this.shadows.begin();
+    this.school.castShadows();
+    const c = this.crab.worldCenter;
+    this.shadows.add(c.x, c.y + 0.3, c.z, 1.5, 1.1, 0, 0.45);
+    this.shadows.end();
     this.jellies.update(t, dt);
     this.bubbles.update();
     const bh = this.core.renderer.getDrawingBufferSize(_v).y;

@@ -21,6 +21,7 @@ uniform float uFocusRange;
 uniform float uMaxBlur;
 uniform float uDof;
 uniform float uGlobalBlur;
+uniform float uTaps;
 uniform vec4 uRipples[${MAX_RIPPLES}];
 uniform float uVignette;
 uniform float uExposure;
@@ -36,8 +37,8 @@ float cocAt(vec2 uv) {
   float d = texture2D(tDepth, uv).r;
   if (d >= 0.99999) return uGlobalBlur;            // open water background: already soft
   float z = viewDist(d);
-  float c = (abs(z - uFocusDist) - uFocusRange) / (uFocusDist * 0.75);
-  if (z < uFocusDist) c *= 1.7;                    // the foreground blurs faster
+  float c = (abs(z - uFocusDist) - uFocusRange) / uFocusDist;
+  if (z < uFocusDist) c *= 2.2;                    // the foreground blurs faster
   return clamp(max(c, 0.0) * uDof + uGlobalBlur, 0.0, 1.0);
 }
 
@@ -106,8 +107,9 @@ void main() {
     vec3 acc = texture2D(tDiffuse, uv).rgb;
     float wsum = 1.0;
     for (int i = 0; i < 12; i++) {
+      if (float(i) >= uTaps) break;
       float fi = float(i) + 0.5;
-      float r = sqrt(fi / 12.0) * radius;
+      float r = sqrt(fi / uTaps) * radius;
       float a = fi * 2.39996323;
       vec2 suv = uv + vec2(cos(a), sin(a)) * r * px;
       float sc = cocAt(suv) * uMaxBlur;
@@ -153,6 +155,7 @@ export class FinalPass extends Pass {
       uMaxBlur: { value: 9 },
       uDof: { value: 1 },
       uGlobalBlur: { value: 0 },
+      uTaps: { value: 12 },
       uRipples: { value: Array.from({ length: MAX_RIPPLES }, () => new THREE.Vector4(0, 0, -100, 0)) },
       uVignette: { value: 0.34 },
       uExposure: { value: 1.04 },
@@ -181,7 +184,7 @@ export class FinalPass extends Pass {
   setSize(width, height) {
     this.uniforms.uResolution.value.set(width, height);
     // Keep the blur radius visually constant across resolutions (tuned at 1180 px wide).
-    this.uniforms.uMaxBlur.value = 9 * (Math.max(width, height) / 1770);
+    this.uniforms.uMaxBlur.value = 7.5 * (Math.max(width, height) / 1770);
   }
 
   render(renderer, writeBuffer, readBuffer) {

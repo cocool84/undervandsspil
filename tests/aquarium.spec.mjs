@@ -125,3 +125,52 @@ test('works offline after the first visit', async ({ page, context, browserName 
   await page.waitForFunction(() => window.__aq && window.__aq.ready === true, null, { timeout: 60_000 });
   await context.setOffline(false);
 });
+
+// ---------------------------------------------------------------- stage 2: fish
+
+test('eight starter fish swim inside the view and keep moving', async ({ page }, info) => {
+  const errors = await openApp(page, '?autostart');
+  await page.waitForTimeout(3000);
+  const size = page.viewportSize();
+  let outside = 0;
+  let samples = 0;
+  let moved = 0;
+  let prev = null;
+  for (let i = 0; i < 16; i++) {
+    const fish = await page.evaluate(() => window.__aq.fish());
+    expect(fish.length).toBe(8);
+    for (const f of fish) {
+      samples++;
+      if (f.x < -60 || f.x > size.width + 60 || f.y < -60 || f.y > size.height + 60) outside++;
+    }
+    if (prev) moved += fish.reduce((s, f, k) => s + Math.hypot(f.x - prev[k].x, f.y - prev[k].y), 0) / fish.length;
+    prev = fish;
+    await page.waitForTimeout(500);
+  }
+  expect(outside / samples, 'fish should stay on screen').toBeLessThan(0.02);
+  expect(moved / 15, 'fish should be swimming').toBeGreaterThan(5);
+  await shot(page, info, '10-fish');
+  expect(errors).toEqual([]);
+});
+
+test('fish QA grid renders every shape, pattern and eye type', async ({ page }, info) => {
+  test.skip(!info.project.name.endsWith('landscape'), 'grid is laid out for landscape');
+  const errors = await openApp(page, '?autostart&fishgrid');
+  await page.waitForTimeout(2500);
+  await shot(page, info, '11-fishgrid-patterns');
+  expect(await page.evaluate(() => window.__aq.fish().length)).toBe(16);
+  await page.goto('/?autostart&fishgrid=eyes');
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await page.waitForTimeout(2500);
+  await shot(page, info, '12-fishgrid-eyes');
+  expect(errors).toEqual([]);
+});
+
+test('night: glowing fish and jellyfish', async ({ page }, info) => {
+  const errors = await openApp(page, '?autostart&night');
+  await page.waitForTimeout(4000);
+  await shot(page, info, '13-night');
+  const stats = await page.evaluate(() => window.__aq.snapshotStats());
+  expect(stats.mean, 'night should be darker than day').toBeLessThan(0.35);
+  expect(errors).toEqual([]);
+});

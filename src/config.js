@@ -38,12 +38,12 @@ export const device = (() => {
 // Ordered from best to cheapest. `bloom` is the bloom resolution relative to the
 // render resolution (0 = off). `plankton` is the fraction of particles drawn.
 export const TIERS = [
-  { dpr: 2.0, dof: true, bloom: 0.5, plankton: 1.0, rays: 9, caustics: 512 },
-  { dpr: 1.75, dof: true, bloom: 0.5, plankton: 1.0, rays: 9, caustics: 512 },
-  { dpr: 1.5, dof: true, bloom: 0.5, plankton: 0.8, rays: 7, caustics: 256 },
-  { dpr: 1.25, dof: false, bloom: 0.25, plankton: 0.6, rays: 6, caustics: 256 },
-  { dpr: 1.0, dof: false, bloom: 0.25, plankton: 0.5, rays: 5, caustics: 256 },
-  { dpr: 0.85, dof: false, bloom: 0, plankton: 0.4, rays: 4, caustics: 128 },
+  { dpr: 2.0, dof: true, taps: 12, bloom: 0.5, plankton: 1.0, rays: 9, caustics: 512 },
+  { dpr: 1.75, dof: true, taps: 10, bloom: 0.5, plankton: 1.0, rays: 8, caustics: 512 },
+  { dpr: 1.5, dof: true, taps: 8, bloom: 0.5, plankton: 0.8, rays: 6, caustics: 256 },
+  { dpr: 1.25, dof: false, taps: 0, bloom: 0.25, plankton: 0.6, rays: 5, caustics: 256 },
+  { dpr: 1.0, dof: false, taps: 0, bloom: 0.25, plankton: 0.5, rays: 4, caustics: 256 },
+  { dpr: 0.85, dof: false, taps: 0, bloom: 0, plankton: 0.4, rays: 4, caustics: 128 },
 ];
 
 export const WORLD = {

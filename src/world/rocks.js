@@ -31,9 +31,8 @@ varying vec3 vColor;
 void main() {
   vec3 N = normalize(vNormal);
   vec3 V = normalize(cameraPosition - vWpos);
-  float speck = snoise(vWpos * 5.0) * 0.5 + 0.5;
-  float blotch = snoise(vWpos * 0.9 + 4.0) * 0.5 + 0.5;
-  vec3 alb = vColor * (0.88 + 0.12 * speck) * (0.92 + 0.16 * blotch);
+  float mottle = sin(vWpos.x * 4.1 + sin(vWpos.y * 3.3)) * sin(vWpos.z * 3.7 + sin(vWpos.x * 2.9));
+  vec3 alb = vColor * (0.94 + 0.08 * mottle);
   vec3 col = softShade(alb, N, V, vWpos, 0.55, 0.06, 12.0, 0.22, 1.0);
   col = applyFog(col, vWpos);
   gl_FragColor = vec4(col, 1.0);
@@ -128,6 +127,7 @@ function place(g, x, z, sx, sy, sz, rotY, sink = 0.18) {
 export function createRocks(r) {
   const geos = [];
   const occluders = [];
+  const spheres = [];
   // x, z, sx, sy, sz, detail
   const big = [
     [-8.6, -3.6, 3.1, 2.4, 2.7, 4],
@@ -136,7 +136,7 @@ export function createRocks(r) {
     [6.4, -2.4, 1.55, 1.2, 1.4, 3],
     [-2.6, -10.2, 2.4, 1.7, 2.2, 3],
     [3.95, 0.7, 0.72, 0.52, 0.62, 3],
-    [-3.7, 4.3, 0.5, 0.36, 0.45, 2],
+    [-4.6, 5.3, 0.5, 0.36, 0.45, 2],
     [6.2, 3.1, 0.82, 0.6, 0.7, 3],
     [-14.5, -18, 5.0, 4.2, 4.0, 3],
     [13.5, -22, 6.0, 5.2, 5.0, 3],
@@ -149,6 +149,7 @@ export function createRocks(r) {
     place(g, x, z, sx, sy, sz, rand(r, 0, TAU));
     geos.push(g);
     if (z > -16) occluders.push([x, z, Math.max(sx, sz) * 1.15]);
+    if (z > -12) spheres.push({ x, y: sandHeight(x, z) + sy * 0.3, z, r: Math.max(sx, sy, sz) * 0.85 });
   });
 
   const arch = archGeometry(9.1);
@@ -180,5 +181,5 @@ export function createRocks(r) {
     vertexColors: true,
   });
   const mesh = new THREE.Mesh(merged, mat);
-  return { mesh, occluders };
+  return { mesh, occluders, spheres };
 }

@@ -42,6 +42,33 @@ export class CameraRig {
     this.startTarget.set(0, WORLD.surfaceY - 5.5, -12);
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
+    this.computeBounds(aspect);
+  }
+
+  // What the resting camera sees on the planes z = 4 (near) and z = −6 (far), with margins.
+  computeBounds(aspect) {
+    const cam = this._scratch || (this._scratch = new THREE.PerspectiveCamera());
+    cam.fov = this.baseFov;
+    cam.aspect = aspect;
+    cam.near = 0.5;
+    cam.far = 500;
+    cam.updateProjectionMatrix();
+    cam.position.copy(this.basePos);
+    cam.lookAt(this.baseTarget);
+    cam.updateMatrixWorld();
+    const hit = (nx, ny, z) => {
+      _ndc.set(nx, ny, 0.5).unproject(cam);
+      _dir.copy(_ndc).sub(cam.position).normalize();
+      const t = (z - cam.position.z) / _dir.z;
+      return _v.copy(cam.position).addScaledVector(_dir, t);
+    };
+    this.bounds = [4, -6].map((z) => ({
+      z,
+      xMin: hit(-0.9, 0, z).x,
+      xMax: hit(0.9, 0, z).x,
+      yMax: hit(0, 0.86, z).y,
+      yMin: hit(0, -0.72, z).y,
+    }));
   }
 
   startDive() {

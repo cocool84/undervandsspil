@@ -14,6 +14,7 @@ varying vec2 vUv;
 varying float vPhase;
 varying float vKeep;
 varying vec3 vWpos;
+varying float vGain;
 void main() {
   vec3 top = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
   vec3 axis = normalize(vec3(-uSunDir.x * 0.42, -1.0, -uSunDir.z * 0.42));
@@ -26,6 +27,8 @@ void main() {
   vPhase = aRay.z;
   vKeep = aRay.w;
   vWpos = wp;
+  float flick = 0.62 + 0.38 * sin(uTime * 0.33 + aRay.z * 6.28) * sin(uTime * 0.19 + aRay.z * 3.1);
+  vGain = flick * exp(-length(wp - cameraPosition) * 0.006) * mix(1.0, aRay.w * 0.75, uNight);
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
 }
 `;
@@ -37,6 +40,7 @@ varying vec2 vUv;
 varying float vPhase;
 varying float vKeep;
 varying vec3 vWpos;
+varying float vGain;
 void main() {
   float edge = 1.0 - abs(vUv.x * 2.0 - 1.0);
   edge = edge * edge * (3.0 - 2.0 * edge);
@@ -44,12 +48,8 @@ void main() {
   float fadeTop = smoothstep(0.0, 0.22, vUv.y);
   // fade by height so the shafts read in both orientations and never wash out the floor
   float fadeBottom = smoothstep(1.5, 8.0, vWpos.y);
-  float flick = 0.62 + 0.38 * sin(uTime * 0.33 + vPhase * 6.28) * sin(uTime * 0.19 + vPhase * 3.1);
-  float streak = 0.72 + 0.28 * snoise(vec2(vUv.x * 3.2 + vPhase * 10.0, vUv.y * 1.6 - uTime * 0.06));
-  float a = edge * fadeTop * fadeBottom * flick * streak * uStrength;
-  float dist = length(vWpos - cameraPosition);
-  a *= exp(-dist * 0.006);
-  a *= mix(1.0, vKeep * 0.75, uNight);
+  float streak = 0.76 + 0.24 * sin(vUv.x * 9.0 + vPhase * 20.0 + uTime * 0.2) * sin(vUv.y * 3.0 - uTime * 0.15 + vPhase * 7.0);
+  float a = edge * fadeTop * fadeBottom * streak * uStrength * vGain;
   vec3 tint = mix(vec3(1.0, 0.96, 0.82), vec3(0.62, 0.78, 1.0), uNight);
   gl_FragColor = vec4(tint * a, 1.0);
 }

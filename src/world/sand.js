@@ -21,23 +21,26 @@ export function sandHeight(x, z) {
 }
 
 const VERT = /* glsl */ `
+attribute vec3 aSand; // contact shadow, tone, ripple warp (baked on the CPU)
 varying vec3 vWpos;
 varying vec3 vNormal;
+varying vec3 vSand;
 void main() {
   vec4 wp = modelMatrix * vec4(position, 1.0);
   vWpos = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * normal);
+  vSand = aSand;
   gl_Position = projectionMatrix * viewMatrix * wp;
 }
 `;
 
 const FRAG = /* glsl */ `
 ${PRELUDE}
-uniform vec3 uOcc[${MAX_OCCLUDERS}];
 uniform vec3 uSandLight;
 uniform vec3 uSandDark;
 varying vec3 vWpos;
 varying vec3 vNormal;
+varying vec3 vSand;
 
 float sparkle(vec2 p) {
   vec2 g = p * 7.0;
@@ -56,24 +59,15 @@ void main() {
   float camDist = length(vWpos - cameraPosition);
 
   // wind-blown ripples
-  float warp = snoise(p * 0.21) * 2.3;
-  float ph = dot(p, vec2(1.35, 0.55)) * 2.5 + warp;
+  float ph = dot(p, vec2(1.35, 0.55)) * 2.5 + vSand.z;
   float rip = sin(ph);
   float near = 1.0 - smoothstep(22.0, 44.0, camDist);
   N = normalize(N + vec3(cos(ph) * 0.09, 0.0, cos(ph) * 0.035) * near);
 
-  float n1 = snoise(p * 0.17) * 0.5 + 0.5;
-  float n2 = snoise(p * 1.6 + 3.0) * 0.5 + 0.5;
-  vec3 alb = mix(uSandDark, uSandLight, smoothstep(0.12, 0.88, n1 * 0.72 + n2 * 0.28));
+  float n2 = 0.5 + 0.5 * sin(p.x * 3.1 + sin(p.y * 2.3)) * sin(p.y * 2.7 + sin(p.x * 1.9));
+  vec3 alb = mix(uSandDark, uSandLight, smoothstep(0.12, 0.88, vSand.y * 0.72 + n2 * 0.28));
   alb *= 0.93 + 0.07 * rip * near;
-
-  float ao = 1.0;
-  for (int i = 0; i < ${MAX_OCCLUDERS}; i++) {
-    vec3 o = uOcc[i];
-    if (o.z <= 0.0) continue;
-    vec2 d = p - o.xy;
-    ao *= 1.0 - 0.4 * exp(-dot(d, d) / (o.z * o.z));
-  }
+  float ao = vSand.x;
   alb *= ao;
 
   vec3 V = normalize(cameraPosition - vWpos);
@@ -101,12 +95,20 @@ export function createSand() {
   }
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
+  const sandAttr = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    sandAttr[i * 3] = 1;
+    sandAttr[i * 3 + 1] = noise2(x * 0.17, z * 0.17) * 0.5 + 0.5;
+    sandAttr[i * 3 + 2] = noise2(x * 0.21 + 40, z * 0.21 - 17) * 2.3;
+  }
+  const sandAttribute = new THREE.BufferAttribute(sandAttr, 3);
+  geo.setAttribute('aSand', sandAttribute);
 
-  const occ = Array.from({ length: MAX_OCCLUDERS }, () => new THREE.Vector3(0, 0, 0));
   const mat = new THREE.ShaderMaterial({
     name: 'Sand',
     uniforms: withShared({
-      uOcc: { value: occ },
       uSandLight: { value: new THREE.Color('#ffecc8') },
       uSandDark: { value: new THREE.Color('#e8c592') },
     }),
@@ -117,14 +119,20 @@ export function createSand() {
 
   return {
     mesh,
-    // list of [x, z, radius]; the biggest ones win if there are too many
+    // Soft contact shadows around static things, baked into the vertices. list: [x, z, radius]
     setOccluders(list) {
-      const sorted = [...list].sort((a, b) => b[2] - a[2]).slice(0, MAX_OCCLUDERS);
-      for (let i = 0; i < MAX_OCCLUDERS; i++) {
-        const o = sorted[i];
-        if (o) occ[i].set(o[0], o[1], o[2]);
-        else occ[i].set(0, 0, 0);
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+        let ao = 1;
+        for (const [ox, oz, r] of list) {
+          const dx = x - ox;
+          const dz = z - oz;
+          ao *= 1 - 0.4 * Math.exp(-(dx * dx + dz * dz) / (r * r));
+        }
+        sandAttr[i * 3] = ao;
       }
+      sandAttribute.needsUpdate = true;
     },
   };
 }

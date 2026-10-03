@@ -243,7 +243,7 @@ export class Crab {
 
   pickNewTarget() {
     let nx = this.x;
-    for (let i = 0; i < 8 && Math.abs(nx - this.x) < 1.6; i++) nx = -4.5 + Math.random() * 9;
+    for (let i = 0; i < 8 && Math.abs(nx - this.x) < 1.6; i++) nx = -3.8 + Math.random() * 8;
     this.targetX = nx;
   }
 

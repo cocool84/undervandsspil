@@ -24,7 +24,9 @@ export function installDebug(app) {
       };
     },
     audioState: () => app.audio.state,
+    fish: () => app.world.school.screenInfo(core.camera, window.innerWidth, window.innerHeight),
     start: () => app.start(),
+    app, // internals for debugging from the console
     // Grab the next rendered frame and return simple luminance stats (blank-frame check).
     snapshotStats() {
       return new Promise((resolve) => {

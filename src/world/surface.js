@@ -30,8 +30,7 @@ void main() {
   vec3 sky = mix(uWaterTop, vec3(1.0), 0.45) * 1.25;
   vec3 col = mix(reflected, sky, window);
 
-  float net = pow(1.0 - abs(snoise(p * 0.42 + vec2(uTime * 0.08, -uTime * 0.05))), 4.0);
-  net += 0.5 * pow(1.0 - abs(snoise(p * 0.8 - vec2(uTime * 0.1, uTime * 0.07))), 5.0);
+  float net = pow(1.0 - abs(n1), 4.0) + 0.5 * pow(1.0 - abs(n2), 5.0);
   col += uKeyColor * net * (0.35 + 0.65 * window) * 0.32;
 
   // sun / moon wobbling through the surface

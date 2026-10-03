@@ -373,10 +373,10 @@ export function createCorals(r) {
   add(mushrooms(r, 3.3, -3.9, 5, '#7cf0ff', '#d8f8ff'), [3.3, -3.9, 0.8]);
   add(mushrooms(r, -2.2, -5.0, 3, '#ff9ae6', '#ffe2f6'));
 
-  add(anemone(r, 4.6, 3.6, 1, '#a24bd6', '#ffc2f4', 0.9), [4.6, 3.6, 0.7]);
-  anemones.push(new THREE.Vector4(4.6, sandHeight(4.6, 3.6) + 0.4, 3.6, -100));
-  add(anemone(r, -2.5, 3.9, 2, '#ff7b39', '#fff1d6', 0.8), [-2.5, 3.9, 0.6]);
-  anemones.push(new THREE.Vector4(-2.5, sandHeight(-2.5, 3.9) + 0.35, 3.9, -100));
+  add(anemone(r, 5.6, 2.3, 1, '#a24bd6', '#ffc2f4', 0.9), [5.6, 2.3, 0.7]);
+  anemones.push(new THREE.Vector4(5.6, sandHeight(5.6, 2.3) + 0.4, 2.3, -100));
+  add(anemone(r, -5.5, 3.5, 2, '#ff7b39', '#fff1d6', 0.8), [-5.5, 3.5, 0.6]);
+  anemones.push(new THREE.Vector4(-5.5, sandHeight(-5.5, 3.5) + 0.35, 3.5, -100));
   add(anemone(r, -7.6, 1.4, 3, '#2fbf9f', '#d4fff0', 0.85), [-7.6, 1.4, 0.6]);
   anemones.push(new THREE.Vector4(-7.6, sandHeight(-7.6, 1.4) + 0.38, 1.4, -100));
   while (anemones.length < MAX_ANEMONES) anemones.push(new THREE.Vector4(0, -100, 0, -100));

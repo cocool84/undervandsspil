@@ -19,12 +19,7 @@ ${PRELUDE}
 varying vec3 vDir;
 void main() {
   vec3 dir = normalize(vDir);
-  vec3 col = waterColor(dir);
-  // faint drifting light far up
-  float up = smoothstep(0.15, 0.9, dir.y);
-  float shimmer = snoise(vec2(dir.x * 6.0 + uTime * 0.05, dir.z * 6.0 - uTime * 0.04)) * 0.5 + 0.5;
-  col += uSunGlow * up * shimmer * 0.06;
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(waterColor(dir), 1.0);
 }
 `;
 

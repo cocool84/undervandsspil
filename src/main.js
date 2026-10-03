@@ -21,7 +21,7 @@ const rig = new CameraRig(core.camera);
 const state = { started: false, updateReady: false };
 const app = { core, rig, state, audio, afterRender: null };
 
-const world = new World(core);
+const world = new World(core, rig);
 app.world = world;
 
 const quality = new Quality({ device, flags, onChange: applyTier });
@@ -32,6 +32,7 @@ function applyTier(index) {
   core.setSize(window.innerWidth, window.innerHeight, quality.dprFor(index));
   core.setBloom(tier.bloom);
   core.finalPass.uniforms.uDof.value = tier.dof ? 1 : 0;
+  core.finalPass.uniforms.uTaps.value = Math.max(tier.taps, 8);
   world.applyTier(tier);
 }
 
@@ -58,13 +59,13 @@ document.addEventListener('visibilitychange', () => {
 // ---------------------------------------------------------------- start
 
 let time = 0;
-let fullscreenAsked = false;
+let fullscreenTries = 0;
 const start = new StartScreen({
-  onGesture() {
+  // `activation` is true for pointerup/touchend, which iOS accepts for fullscreen.
+  onGesture(activation) {
     audio.unlock();
-    if (!fullscreenAsked && !flags.autostart) {
-      fullscreenAsked = true;
-      requestFullscreen();
+    if (activation && fullscreenTries < 3 && !flags.autostart) {
+      fullscreenTries = requestFullscreen() ? 3 : fullscreenTries + 1;
     }
   },
   onPop() {

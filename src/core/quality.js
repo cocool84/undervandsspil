@@ -1,5 +1,6 @@
 // QualityManager: picks a start tier from a pixel budget and steps down/up based on
-// the measured frame interval. iPads never go above tier 1 (heat and battery).
+// the measured frame interval. iPads never climb above their start tier (no hitches from
+// failed upgrades, less heat and battery).
 
 import { TIERS } from '../config.js';
 
@@ -11,6 +12,8 @@ export class Quality {
     this.locked = flags.quality != null;
     this.tier = this.locked ? Math.min(Math.max(flags.quality, 0), TIERS.length - 1) : this.pickStart();
     this.startTier = this.tier;
+    // On iPad a failed step up shows as a visible hitch, so never climb above the start tier.
+    if (device.isIPad) this.best = this.tier;
     this.ema = 16.7;
     this.overTime = 0;
     this.underTime = 0;
