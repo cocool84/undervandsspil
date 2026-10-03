@@ -16,6 +16,7 @@ export class Quality {
     this.underTime = 0;
     this.settle = 1.5;
     this.cooldown = 0;
+    this.longFrames = 0;
     this.failedUps = 0;
     this.lastUpAt = -1e9;
     this.halfRate = false;
@@ -49,9 +50,19 @@ export class Quality {
   // dtMs: interval since the last rendered frame.
   frame(dtMs, dtSec, now) {
     if (dtMs > 250) {
-      this.settleFor(1);
+      // One long frame is a hitch (tab switch, shader compile). Several in a row means
+      // the device is drowning: drop two tiers at once.
+      this.longFrames++;
+      this.cooldown -= dtMs / 1000;
+      if (this.longFrames >= 3 && !this.locked && this.cooldown <= 0 && this.tier < TIERS.length - 1) {
+        this.longFrames = 0;
+        this.set(Math.min(this.tier + 2, TIERS.length - 1), 'down', now);
+      } else {
+        this.settleFor(1);
+      }
       return;
     }
+    this.longFrames = 0;
     // 120 Hz screens: render every other frame (battery/heat); simulation is dt-based.
     if (!this.halfRate) {
       this.fastFrames = dtMs < 11 ? this.fastFrames + 1 : 0;
