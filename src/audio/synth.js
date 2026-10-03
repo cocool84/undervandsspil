@@ -99,74 +99,127 @@ export function sparkle(ctx, dest, t, { from = 9, count = 7, gain = 0.05, step =
   return count * step + 0.55;
 }
 
-// A fish giggling: "hi-hi-hi-hi" through soft vowel formants, with vibrato.
-export function giggle(ctx, dest, t, { pitch = 560, gain = 0.15, syllables = 0 } = {}) {
-  const n = syllables || 4 + Math.floor(Math.random() * 2);
-  const out = ctx.createGain();
-  out.gain.value = gain;
-  out.connect(dest);
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.value = 3200;
-  lp.connect(out);
-  const f1 = ctx.createBiquadFilter();
-  f1.type = 'bandpass';
-  f1.frequency.value = 700;
-  f1.Q.value = 2.5;
-  const f2 = ctx.createBiquadFilter();
-  f2.type = 'bandpass';
-  f2.frequency.value = 2300;
-  f2.Q.value = 5;
-  const dry = ctx.createGain();
-  dry.gain.value = 0.45;
-  const f2g = ctx.createGain();
-  f2g.gain.value = 0.6;
-  f1.connect(lp);
-  f2.connect(f2g).connect(lp);
-  dry.connect(lp);
-  let tt = t;
-  for (let i = 0; i < n; i++) {
-    const p = pitch * (1.24 - i * 0.05) * (1 + (Math.random() - 0.5) * 0.05);
-    const o = osc(ctx, 'triangle', p * 1.06, tt, 0.12);
-    o.frequency.exponentialRampToValueAtTime(p * 0.9, tt + 0.08);
-    const vib = osc(ctx, 'sine', 15, tt, 0.12);
-    const vg = ctx.createGain();
-    vg.gain.value = p * 0.03;
-    vib.connect(vg).connect(o.frequency);
-    const g = ctx.createGain();
-    env(g, tt, 1, 0.014, 0.08);
-    o.connect(g);
-    g.connect(f1);
-    g.connect(f2);
-    g.connect(dry);
-    tt += 0.1 + Math.random() * 0.025;
-  }
-  return tt - t + 0.12;
+// One soft "bubble marimba" note — the fish's singing voice: a sine that blips up into pitch
+// like a water drop, with a tiny woody overtone at the strike.
+function mallet(ctx, dest, t, freq, gain, decay = 0.3) {
+  const o = osc(ctx, 'sine', freq * 0.9, t, decay + 0.05);
+  o.frequency.exponentialRampToValueAtTime(freq, t + 0.025);
+  const g = ctx.createGain();
+  env(g, t, gain, 0.006, decay);
+  o.connect(g).connect(dest);
+  const o2 = osc(ctx, 'sine', freq * 4, t, 0.07);
+  const g2 = ctx.createGain();
+  env(g2, t, gain * 0.12, 0.002, 0.05);
+  o2.connect(g2).connect(dest);
 }
 
-// "Nom nom".
-export function nom(ctx, dest, t, { gain = 0.17 } = {}) {
-  for (const [dt, a, b] of [[0, 360, 200], [0.13, 330, 180]]) {
-    const o = osc(ctx, 'sine', a, t + dt, 0.13);
-    o.frequency.exponentialRampToValueAtTime(b, t + dt + 0.08);
-    const g = ctx.createGain();
-    env(g, t + dt, gain, 0.008, 0.1);
-    o.connect(g).connect(dest);
+// A slide-whistle glide with a vibrato that blooms at the end ("wheee!"); optionally back down.
+function glide(ctx, dest, t, f0, f1, dur, gain, f2 = 0) {
+  const o = osc(ctx, 'sine', f0, t, dur + 0.1);
+  o.frequency.exponentialRampToValueAtTime(f1, t + (f2 ? dur * 0.55 : dur));
+  if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  const vib = osc(ctx, 'sine', 6.5, t, dur + 0.1);
+  const vg = ctx.createGain();
+  vg.gain.setValueAtTime(0, t);
+  vg.gain.linearRampToValueAtTime(f1 * 0.02, t + dur);
+  vib.connect(vg).connect(o.frequency);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.05);
+  g.gain.setValueAtTime(gain, t + dur * 0.75);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.08);
+  o.connect(g).connect(dest);
+}
+
+// A tapped fish sings a tiny tune that matches its trick. `base` is the fish's own voice
+// (bigger fish sing lower); `short` is a single note for rapid repeat taps.
+export function fishTune(ctx, dest, t, { trick = 'flip', base = 6, gain = 0.11, short = false } = {}) {
+  const out = soft(ctx, dest, 2400);
+  const f = (step) => noteFreq(base + step);
+  const alt = Math.random() < 0.5 ? 0 : 1; // two flavours of every tune
+  if (short) {
+    mallet(ctx, out, t, f([0, 2, 3, 5][Math.floor(Math.random() * 4)]), gain * 0.8, 0.25);
+    return 0.35;
   }
-  return 0.3;
+  switch (trick) {
+    case 'roll': // a giggly trill: "di-da-di-da-dum"
+      [3, 2, 3, 2].forEach((s, i) => mallet(ctx, out, t + i * 0.065, f(s + alt), gain * (1 - i * 0.08), 0.18));
+      mallet(ctx, out, t + 0.3, f(0), gain * 0.9, 0.35);
+      return 0.7;
+    case 'spin': // a swirl: "wheee-ooo"
+      mallet(ctx, out, t, f(1), gain * 0.9);
+      glide(ctx, out, t + 0.05, f(1), f(4), 0.38, gain * 0.55, f(1));
+      mallet(ctx, out, t + 0.45, f(alt ? 3 : 2), gain * 0.7, 0.3);
+      return 0.85;
+    case 'jump': // "boing — up! — ting"
+      mallet(ctx, out, t, f(-2), gain);
+      glide(ctx, out, t + 0.04, f(-2), f(5), 0.16, gain * 0.6);
+      mallet(ctx, out, t + 0.36, f(5), gain * 0.65, 0.45);
+      return 0.85;
+    default: // flip: "ba-da-wheee… ting"
+      mallet(ctx, out, t, f(0), gain);
+      mallet(ctx, out, t + 0.08, f(2), gain);
+      glide(ctx, out, t + 0.16, f(2), f(alt ? 5 : 4), 0.24, gain * 0.55);
+      mallet(ctx, out, t + 0.44, f(alt ? 5 : 4), gain * 0.7, 0.4);
+      return 0.9;
+  }
+}
+
+// The puffer fish blowing itself up: a soft rising "bwoomp" with a little breath.
+export function puffup(ctx, dest, t, { gain = 0.09 } = {}) {
+  const o = osc(ctx, 'triangle', 250, t, 0.42);
+  o.frequency.exponentialRampToValueAtTime(520, t + 0.3);
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(700, t);
+  lp.frequency.exponentialRampToValueAtTime(1500, t + 0.3);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.22);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  o.connect(lp).connect(g).connect(dest);
+  const s = noise(ctx, t, 0.36);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 1.2;
+  bp.frequency.setValueAtTime(800, t);
+  bp.frequency.exponentialRampToValueAtTime(1500, t + 0.3);
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(gain * 0.35, t + 0.2);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+  s.connect(bp).connect(ng).connect(soft(ctx, dest, 1800));
+  return 0.45;
+}
+
+// "Nom nom": two little mouth-closing syllables (a soft triangle through a closing filter).
+export function nom(ctx, dest, t, { gain = 0.2 } = {}) {
+  for (const [dt, a, b] of [[0, 520, 300], [0.14, 470, 270]]) {
+    const o = osc(ctx, 'triangle', a, t + dt, 0.14);
+    o.frequency.exponentialRampToValueAtTime(b, t + dt + 0.1);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 1.5;
+    lp.frequency.setValueAtTime(1800, t + dt);
+    lp.frequency.exponentialRampToValueAtTime(350, t + dt + 0.11);
+    const g = ctx.createGain();
+    env(g, t + dt, gain, 0.008, 0.11);
+    o.connect(lp).connect(g).connect(dest);
+  }
+  return 0.32;
 }
 
 // Soft splash: filtered noise sweeping down, then a few bubbles.
-export function splash(ctx, dest, t, { gain = 0.16, bubbles = 3 } = {}) {
+export function splash(ctx, dest, t, { gain = 0.2, bubbles = 3 } = {}) {
   const s = noise(ctx, t, 0.6);
   const bp = ctx.createBiquadFilter();
   bp.type = 'bandpass';
   bp.Q.value = 1.1;
-  bp.frequency.setValueAtTime(1000, t);
-  bp.frequency.exponentialRampToValueAtTime(320, t + 0.45);
+  bp.frequency.setValueAtTime(1400, t);
+  bp.frequency.exponentialRampToValueAtTime(380, t + 0.45);
   const g = ctx.createGain();
   env(g, t, gain, 0.02, 0.5);
-  s.connect(bp).connect(g).connect(soft(ctx, soft(ctx, dest, 1600), 1600)); // two stages: 24 dB/oct
+  s.connect(bp).connect(g).connect(soft(ctx, soft(ctx, dest, 2000), 2000)); // two stages: 24 dB/oct
   for (let i = 0; i < bubbles; i++) bloop(ctx, dest, t + 0.12 + i * 0.09, { note: 7 + Math.floor(Math.random() * 5), gain: 0.06, short: true });
   return 0.7;
 }
@@ -207,7 +260,7 @@ export function clickclack(ctx, dest, t, { gain = 0.14, count = 3 } = {}) {
 }
 
 // Jelly "boing": a wobbling pitch dip.
-export function boing(ctx, dest, t, { gain = 0.14, base = 196 } = {}) {
+export function boing(ctx, dest, t, { gain = 0.15, base = 294 } = {}) {
   const o = osc(ctx, 'sine', base * 1.4, t, 0.7);
   o.frequency.exponentialRampToValueAtTime(base * 0.8, t + 0.12);
   o.frequency.exponentialRampToValueAtTime(base * 1.6, t + 0.55);
@@ -223,7 +276,7 @@ export function boing(ctx, dest, t, { gain = 0.14, base = 196 } = {}) {
 }
 
 // Bubble pop (start bubble).
-export function pop(ctx, dest, t, { gain = 0.16 } = {}) {
+export function pop(ctx, dest, t, { gain = 0.22 } = {}) {
   const o = osc(ctx, 'sine', 520, t, 0.1);
   o.frequency.exponentialRampToValueAtTime(1150, t + 0.035);
   const g = ctx.createGain();
@@ -240,16 +293,17 @@ export function pop(ctx, dest, t, { gain = 0.16 } = {}) {
   return 0.12;
 }
 
-// Soft sand "puff" and seaweed "swish".
-export function puff(ctx, dest, t, { gain = 0.12, freq = 700, dur = 0.35 } = {}) {
+// Soft sand "puff" and seaweed "swish": a breath of noise sinking in pitch.
+export function puff(ctx, dest, t, { gain = 0.2, freq = 1100, dur = 0.35 } = {}) {
   const s = noise(ctx, t, dur + 0.05);
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(freq, t);
-  lp.frequency.exponentialRampToValueAtTime(freq * 0.4, t + dur);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.8;
+  bp.frequency.setValueAtTime(freq, t);
+  bp.frequency.exponentialRampToValueAtTime(freq * 0.45, t + dur);
   const g = ctx.createGain();
-  env(g, t, gain, 0.03, dur);
-  s.connect(lp).connect(g).connect(dest);
+  env(g, t, gain, 0.02, dur);
+  s.connect(bp).connect(g).connect(soft(ctx, dest, 2200));
   return dur + 0.05;
 }
 
@@ -278,4 +332,4 @@ export function tock(ctx, dest, t, { note = 9, gain = 0.12 } = {}) {
   return 0.55;
 }
 
-export const RECIPES = { bloop, pling, sparkle, giggle, nom, splash, whoosh, chime, clickclack, boing, pop, puff, treasure, tock };
+export const RECIPES = { bloop, pling, sparkle, fishTune, puffup, nom, splash, whoosh, chime, clickclack, boing, pop, puff, treasure, tock };

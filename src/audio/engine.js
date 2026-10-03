@@ -6,10 +6,11 @@ import { RECIPES } from './synth.js';
 import { Ambience } from './ambience.js';
 
 const MAX_VOICES = 16;
+export const AMBIENCE_LEVEL = 0.125; // ambience bus gain, well under the effects
 // minimum seconds between two sounds of the same kind (many little fingers…)
-const MIN_GAP = { bloop: 0.05, giggle: 0.14, nom: 0.08, pop: 0.05, puff: 0.08, clickclack: 0.12, boing: 0.12, tock: 0.04, sparkle: 0.1, pling: 0.03, splash: 0.2, whoosh: 0.3, chime: 0.3, treasure: 0.4 };
+const MIN_GAP = { bloop: 0.05, fishTune: 0.07, puffup: 0.3, nom: 0.08, pop: 0.05, puff: 0.08, clickclack: 0.12, boing: 0.12, tock: 0.04, sparkle: 0.1, pling: 0.03, splash: 0.2, whoosh: 0.3, chime: 0.3, treasure: 0.4 };
 
-function buildChain(ctx, volume, output = ctx.destination) {
+export function buildChain(ctx, volume, output = ctx.destination) {
   const master = ctx.createGain();
   master.gain.value = volume;
   const soften = ctx.createBiquadFilter();
@@ -39,6 +40,7 @@ export class AudioEngine {
     this.muted = false;
     this.voices = 0;
     this.last = {};
+    this.played = {}; // how often each sound really played (for the tests)
     this.night = false;
     try {
       // Play even when the device is switched to silent; the in-app button mutes.
@@ -62,7 +64,7 @@ export class AudioEngine {
     this.sfx = ctx.createGain();
     this.sfx.connect(this.master);
     this.ambienceBus = ctx.createGain();
-    this.ambienceBus.gain.value = 0.125; // ≈ −18 dB under the effects
+    this.ambienceBus.gain.value = AMBIENCE_LEVEL;
     this.ambienceBus.connect(this.master);
     this.ambience = new Ambience(ctx, this.ambienceBus);
     return ctx;
@@ -123,6 +125,7 @@ export class AudioEngine {
     if (this.voices >= MAX_VOICES) return;
     this.last[name] = now;
     const dur = recipe(ctx, this.sfx, now + 0.005 + delay, opts);
+    this.played[name] = (this.played[name] ?? 0) + 1;
     this.voices++;
     setTimeout(() => {
       this.voices--;
@@ -140,48 +143,10 @@ export class AudioEngine {
     document.addEventListener('visibilitychange', () => this.applyGain());
   }
 
-  // Render every recipe offline through the same chain and measure peak and treble.
+  // Offline analysis for the tests: every recipe (peak, treble, loudness) and the ambience.
   async analyze() {
-    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    const rate = 44100;
-    const results = {};
-    for (const name of Object.keys(RECIPES)) {
-      const render = async (highpass) => {
-        const ctx = new OAC(1, Math.floor(rate * 2.4), rate);
-        let output = ctx.destination;
-        if (highpass) {
-          // measure what is left above 5 kHz after the whole output chain (36 dB/oct)
-          let next = ctx.destination;
-          for (let k = 0; k < 3; k++) {
-            const hp = ctx.createBiquadFilter();
-            hp.type = 'highpass';
-            hp.frequency.value = 5000;
-            hp.connect(next);
-            next = hp;
-          }
-          output = next;
-        }
-        const dest = buildChain(ctx, this.volume, output);
-        RECIPES[name](ctx, dest, 0.05, {});
-        const buf = await ctx.startRendering();
-        const d = buf.getChannelData(0);
-        let peak = 0;
-        let sum = 0;
-        for (let i = 0; i < d.length; i++) {
-          const v = Math.abs(d[i]);
-          if (v > peak) peak = v;
-          sum += d[i] * d[i];
-        }
-        return { peak, rms: Math.sqrt(sum / d.length) };
-      };
-      const full = await render(false);
-      const high = await render(true);
-      results[name] = {
-        peakDb: Math.round(20 * Math.log10(full.peak + 1e-9) * 10) / 10,
-        trebleRatio: Math.round((high.rms / (full.rms + 1e-9)) * 1000) / 1000,
-      };
-    }
-    return results;
+    const { analyzeRecipes, analyzeAmbience } = await import('./analysis.js');
+    return { recipes: await analyzeRecipes(this.volume), ambience: await analyzeAmbience(this.volume) };
   }
 }
 

@@ -156,8 +156,16 @@ export class Interaction {
       core.finalPass.addRipple(u, v, time, 0.55);
       const trick = fish.trick();
       world.fx.love(fish.pos, 5);
-      audio.play('giggle', { pitch: [600, 720, 660, 800][fish.dna.shape] / fish.size });
-      if (fish.dna.shape === 3) audio.play('boing', { base: 280, gain: 0.08 }, 0.05);
+      // each fish sings its own little tune; quick repeat taps get a single soft note
+      const now = performance.now();
+      const short = now - fish.tunedAt < 650;
+      fish.tunedAt = now;
+      if (fish.dna.shape === 3 && !short) {
+        audio.play('puffup');
+        audio.play('fishTune', { trick, base: fish.voice, gain: 0.09 }, 0.22);
+      } else {
+        audio.play('fishTune', { trick, base: fish.voice, short });
+      }
       this.pushTouch(fish.pos);
       this.last = { type: 'fish', id: fish.dna.id, trick };
       return;
@@ -242,7 +250,7 @@ export class Interaction {
         _c.set(k.x, Math.max(point.y, sandHeight(k.x, k.z) + 0.5), k.z);
         this.pushTouch(_c);
         world.bubbles.burst(point.x, point.y, point.z, 6, 0.4, 0.04, 0.12);
-        audio.play('puff', { freq: 1500, gain: 0.08, dur: 0.45 });
+        audio.play('puff', { freq: 1200, gain: 0.14, dur: 0.45 });
         break;
       }
       default:
@@ -282,7 +290,7 @@ export class Interaction {
     world.bubbles.burst(cx, top - 0.5, 0.5, 10, 1.5, 0.05, 0.14);
     _p.set(cx, top - 1, 0.5).project(core.camera);
     core.finalPass.addRipple(_p.x * 0.5 + 0.5, Math.min(_p.y * 0.5 + 0.5, 0.97), U.uTime.value, 0.8);
-    audio.play('splash', { gain: 0.1, bubbles: 2 });
+    audio.play('splash', { gain: 0.15, bubbles: 2 });
     audio.play('sparkle', { from: 9, count: 5, gain: 0.04 }, 0.12);
   }
 

@@ -236,6 +236,9 @@ test('tapping a fish makes it do a happy trick', async ({ page }, info) => {
   await shot(page, info, '21-fish-trick');
   const state = await page.evaluate((id) => window.__aq.fish().find((q) => q.id === id).state, (await page.evaluate(() => window.__aq.app.interaction.last.id)));
   expect(state).toBe('trick');
+  // …and sings its little tune (when the browser lets the audio run)
+  const audio = await page.evaluate(() => ({ state: window.__aq.app.audio.state, played: window.__aq.app.audio.played }));
+  if (audio.state === 'running') expect(audio.played.fishTune ?? 0).toBeGreaterThanOrEqual(1);
   expect(errors).toEqual([]);
 });
 
@@ -334,12 +337,17 @@ test('a finger gliding through the water leaves a trail that fish follow', async
   expect(errors).toEqual([]);
 });
 
-test('every sound is soft: no loud peaks, little treble', async ({ page }) => {
+test('every sound is soft: no loud peaks, little treble, clearly above the ambience', async ({ page }) => {
   await openApp(page, '?autostart');
-  const results = await page.evaluate(() => window.__aq.app.audio.analyze());
-  console.log('sound analysis', JSON.stringify(results));
-  for (const [name, r] of Object.entries(results)) {
+  const { recipes, ambience } = await page.evaluate(() => window.__aq.app.audio.analyze());
+  console.log('ambience', JSON.stringify(ambience));
+  console.log('sound analysis', JSON.stringify(recipes));
+  // the calm bed never pushes the limiter and stays well under every tap
+  expect(ambience.peakDb).toBeLessThanOrEqual(-18);
+  for (const [name, r] of Object.entries(recipes)) {
     expect(r.peakDb, `${name} peak`).toBeLessThanOrEqual(-6);
     expect(r.trebleRatio, `${name} treble`).toBeLessThan(0.12);
+    // (the whoosh is only ever an accent under the day/night chime)
+    if (name !== 'whoosh') expect(r.loudness - ambience.loudest, `${name} over ambience`).toBeGreaterThanOrEqual(8);
   }
 });

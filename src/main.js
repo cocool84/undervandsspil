@@ -53,10 +53,7 @@ app.hud = hud;
 world.school.onEat = (fish, full) => {
   audio.play('nom');
   world.fx.love(fish.pos, full ? 6 : 2);
-  if (full) {
-    fish.trick();
-    audio.play('giggle', { pitch: 700 / fish.size }, 0.25);
-  }
+  if (full) audio.play('fishTune', { trick: fish.trick(), base: fish.voice }, 0.25);
 };
 world.onCrabEat = (p) => {
   audio.play('nom', { gain: 0.12 });

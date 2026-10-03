@@ -1,8 +1,11 @@
 // Calm underwater ambience: a soft detuned drone through slowly moving filters, a deep
 // "water wash" and the odd tiny bubble. Night lowers and darkens it. Plays on its own,
-// quiet bus (about 18 dB under the effects).
+// quiet bus well under the effects, so every tap stands out clearly.
 
 import { bloop, noteFreq } from './synth.js';
+
+// Mix inside the ambience (the bus level is set by the engine).
+const MIX = { drone: 0.3, wash: 0.55, bubbles: 1 };
 
 function brownNoise(ctx, seconds = 4) {
   const b = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
@@ -24,7 +27,8 @@ export class Ambience {
     this.night = 0;
   }
 
-  start() {
+  // `parts` (tests) picks which layers to play: { drone, wash, bubbles }.
+  start({ live = true, parts = MIX } = {}) {
     if (this.started) return;
     this.started = true;
     const ctx = this.ctx;
@@ -33,13 +37,19 @@ export class Ambience {
     this.out.gain.setValueAtTime(0.0001, t);
     this.out.gain.exponentialRampToValueAtTime(1, t + 3);
     this.out.connect(this.bus);
+    const layer = (name) => {
+      const g = ctx.createGain();
+      g.gain.value = (parts[name] ? 1 : 0) * MIX[name];
+      g.connect(this.out);
+      return g;
+    };
 
     // drone: C2, G2, C3 (night: a tone lower), gently detuned
     this.filter = ctx.createBiquadFilter();
     this.filter.type = 'lowpass';
     this.filter.frequency.value = 420;
     this.filter.Q.value = 0.6;
-    this.filter.connect(this.out);
+    this.filter.connect(layer('drone'));
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.06;
     const lfoGain = ctx.createGain();
@@ -77,19 +87,32 @@ export class Ambience {
     const sg = ctx.createGain();
     sg.gain.value = 0.3;
     swell.connect(sg).connect(wg.gain);
-    wash.connect(bp).connect(wg).connect(this.out);
+    wash.connect(bp).connect(wg).connect(layer('wash'));
     wash.start();
     swell.start();
 
-    // tiny ambient bubbles
+    // tiny ambient bubbles, scheduled a little ahead
+    this.bubbleOut = layer('bubbles');
+    this.bubbleT = t + 1;
+    if (!live) return;
     this.timer = setInterval(() => {
-      if (Math.random() < 0.35) {
-        const n = 1 + Math.floor(Math.random() * 3);
+      const now = this.ctx.currentTime;
+      this.bubbleT = Math.max(this.bubbleT, now + 0.05); // never pile up after a long pause
+      this.scheduleBubbles(now + 1.2);
+    }, 450);
+  }
+
+  // Random little groups of bubbles up to time `until` (the tests also render this offline).
+  scheduleBubbles(until, rnd = Math.random) {
+    while (this.bubbleT < until) {
+      if (rnd() < 0.28) {
+        const n = 1 + Math.floor(rnd() * 3);
         for (let i = 0; i < n; i++) {
-          bloop(this.ctx, this.out, this.ctx.currentTime + 0.02 + i * 0.08, { note: 14 + Math.floor(Math.random() * 5), gain: 0.22, short: true });
+          bloop(this.ctx, this.bubbleOut, this.bubbleT + i * 0.08, { note: 10 + Math.floor(rnd() * 4), gain: 0.08, short: true });
         }
       }
-    }, 900);
+      this.bubbleT += 0.9;
+    }
   }
 
   setNight(on) {

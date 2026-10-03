@@ -47,6 +47,9 @@ export class Fish {
     this.mesh.userData.fish = this;
     this.size = this.persona.size;
     this.mesh.scale.setScalar(this.size);
+    // singing voice (a step of the pentatonic scale): bigger fish sing lower, each a bit its own
+    this.voice = clamp(6 + [0, 1, 0, -1][dna.shape] - Math.round((this.size - 1) * 6) + ((dna.seed >>> 4) % 3) - 1, 4, 7);
+    this.tunedAt = -1e9;
     this.radius = meta.radius * this.size;
     this.pos = this.mesh.position;
     this.vel = new THREE.Vector3(1, 0, 0);
