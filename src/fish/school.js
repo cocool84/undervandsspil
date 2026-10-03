@@ -33,6 +33,7 @@ export class School {
     this.onEat = null; // (fish, full) => void
     this.onSplash = null; // (fish) => void — a released fish breaks into view
     this.onArrive = null; // (fish) => void — …and has arrived
+    this.onLeave = null; // (fish) => void — a fish starts waving goodbye
     this.onGone = null; // (fish) => void — a fish has swum out of the aquarium
     this.foodScan = 0;
     this.grid = flags.fishgrid ? (new URLSearchParams(location.search).get('fishgrid') || 'patterns') : null;
@@ -379,6 +380,7 @@ export class School {
   sendAway(f) {
     const b = this.boundsAt(f.pos.z);
     f.leave(f.pos.x > (b.xMin + b.xMax) / 2 ? 1 : -1);
+    this.onLeave?.(f);
   }
 
   // Hungry fish go for the nearest falling flake; eating happens at the nose.

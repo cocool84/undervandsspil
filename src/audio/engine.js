@@ -11,7 +11,7 @@ export const AMBIENCE_LEVEL = 0.125; // ambience bus gain, well under the effect
 // The parents' sea-sound slider (0..1, 0.5 = default) → ambience bus gain.
 const ambienceGain = (amount) => AMBIENCE_LEVEL * Math.pow(Math.max(amount, 0) / 0.5, 1.5);
 // minimum seconds between two sounds of the same kind (many little fingers…)
-const MIN_GAP = { bloop: 0.05, fishTune: 0.07, puffup: 0.3, nom: 0.08, pop: 0.05, puff: 0.08, clickclack: 0.12, boing: 0.12, tock: 0.04, sparkle: 0.1, pling: 0.03, splash: 0.2, whoosh: 0.3, chime: 0.3, treasure: 0.4 };
+const MIN_GAP = { bloop: 0.05, fishTune: 0.07, puffup: 0.3, nom: 0.08, pop: 0.05, puff: 0.08, clickclack: 0.12, boing: 0.12, tock: 0.04, sparkle: 0.1, pling: 0.03, splash: 0.2, whoosh: 0.3, chime: 0.3, treasure: 0.4, plop: 0.04, morph: 0.15, brush: 0.07, pour: 0.15, blink: 0.12, harp: 0.2, magic: 0.5, fanfare: 0.8, goodbye: 0.6 };
 
 export function buildChain(ctx, volume, output = ctx.destination) {
   const master = ctx.createGain();
@@ -155,7 +155,11 @@ export class AudioEngine {
   // Offline analysis for the tests: every recipe (peak, treble, loudness) and the ambience.
   async analyze() {
     const { analyzeRecipes, analyzeAmbience } = await import('./analysis.js');
-    return { recipes: await analyzeRecipes(this.volume), ambience: await analyzeAmbience(this.volume) };
+    return {
+      recipes: await analyzeRecipes(this.volume),
+      ambience: await analyzeAmbience(this.volume),
+      ambienceNight: await analyzeAmbience(this.volume, { night: true }),
+    };
   }
 }
 

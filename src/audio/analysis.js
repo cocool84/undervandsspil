@@ -142,15 +142,18 @@ export async function analyzeRecipes(volume = 0.7, recipes = RECIPES) {
 }
 
 // The ambience alone (after its fade-in), rendered with deterministic bubbles.
-export async function analyzeAmbience(volume = 0.7, { seconds = 16, parts, level = AMBIENCE_LEVEL } = {}) {
+export async function analyzeAmbience(volume = 0.7, { seconds = 16, parts, level = AMBIENCE_LEVEL, night = false } = {}) {
   const data = await renderOffline(seconds, (ctx, out) => {
     const bus = ctx.createGain();
     bus.gain.value = level;
     bus.connect(buildChain(ctx, volume, out));
     const amb = new Ambience(ctx, bus);
     amb.start({ live: false, parts });
+    if (night) amb.setNight(true);
     let seed = 12345;
-    amb.scheduleBubbles(seconds, () => (seed = (seed * 16807) % 2147483647) / 2147483647);
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    amb.scheduleBubbles(seconds, rnd);
+    amb.scheduleMusic(seconds, rnd);
   });
   const settled = data.subarray(Math.floor(RATE * 3.5));
   const loud = speakerLoudness(settled);

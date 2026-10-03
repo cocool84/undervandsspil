@@ -332,4 +332,145 @@ export function tock(ctx, dest, t, { note = 9, gain = 0.12 } = {}) {
   return 0.55;
 }
 
-export const RECIPES = { bloop, pling, sparkle, fishTune, puffup, nom, splash, whoosh, chime, clickclack, boing, pop, puff, treasure, tock };
+// ---------------------------------------------------------------- the fish factory
+
+// A factory button: a soft bubble "plop" with a little note on it.
+export function plop(ctx, dest, t, { note = 8, gain = 0.15 } = {}) {
+  const f = noteFreq(note);
+  const o = osc(ctx, 'sine', f * 1.9, t, 0.12);
+  o.frequency.exponentialRampToValueAtTime(f * 0.95, t + 0.045);
+  const g = ctx.createGain();
+  env(g, t, gain, 0.003, 0.09);
+  o.connect(g).connect(dest);
+  mallet(ctx, dest, t + 0.03, f, gain * 0.55, 0.22);
+  return 0.32;
+}
+
+// A new body shape: "fwee-oo — ding!"
+export function morph(ctx, dest, t, { note = 6, gain = 0.11 } = {}) {
+  const out = soft(ctx, dest, 2400);
+  const f = noteFreq(note);
+  glide(ctx, out, t, f * 0.7, f * 1.5, 0.18, gain * 0.7, f * 1.2);
+  const s = noise(ctx, t, 0.16);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 1.4;
+  bp.frequency.setValueAtTime(700, t);
+  bp.frequency.exponentialRampToValueAtTime(1500, t + 0.14);
+  const ng = ctx.createGain();
+  env(ng, t, gain * 0.35, 0.02, 0.13);
+  s.connect(bp).connect(ng).connect(out);
+  mallet(ctx, out, t + 0.22, noteFreq(note + 3), gain * 0.9, 0.35);
+  return 0.65;
+}
+
+// Finger painting: a soft swish for every bit of stroke (faster strokes swish brighter).
+export function brush(ctx, dest, t, { gain = 0.62, speed = 0.5 } = {}) {
+  const dur = 0.13;
+  const s = noise(ctx, t, dur + 0.03);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(560 + 480 * speed, t);
+  bp.frequency.exponentialRampToValueAtTime(480, t + dur);
+  const g = ctx.createGain();
+  env(g, t, gain * (0.55 + 0.45 * speed), 0.025, dur);
+  s.connect(bp).connect(g).connect(soft(ctx, soft(ctx, dest, 1700), 1700)); // 24 dB/oct: a soft "shff", no hiss
+  return dur + 0.04;
+}
+
+// Colour poured over the whole fish: glug-glug-bloop and a little splosh.
+export function pour(ctx, dest, t, { note = 8, gain = 0.15 } = {}) {
+  [0, 0.075, 0.15].forEach((dt, i) => bloop(ctx, dest, t + dt, { note: note + 2 - i * 2, gain: gain * (1 - i * 0.12), short: true }));
+  const s = noise(ctx, t + 0.1, 0.35);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 1;
+  bp.frequency.setValueAtTime(900, t + 0.1);
+  bp.frequency.exponentialRampToValueAtTime(380, t + 0.42);
+  const g = ctx.createGain();
+  env(g, t + 0.1, gain * 0.45, 0.02, 0.3);
+  s.connect(bp).connect(g).connect(soft(ctx, dest, 1600));
+  return 0.55;
+}
+
+// New eyes: blink-blink, "bi-ding".
+export function blink(ctx, dest, t, { note = 10, gain = 0.09 } = {}) {
+  pling(ctx, dest, t, { note, gain: gain * 0.8, decay: 0.3 });
+  pling(ctx, dest, t + 0.09, { note: note + 2, gain, decay: 0.6 });
+  return 0.75;
+}
+
+// A soft harp run up the scale (rainbows, magic).
+export function harp(ctx, dest, t, { from = 5, count = 10, step = 0.036, gain = 0.07 } = {}) {
+  const out = soft(ctx, dest, 2600);
+  for (let i = 0; i < count; i++) mallet(ctx, out, t + i * step, noteFreq(from + i), gain * (1 - i * 0.04), 0.55);
+  return count * step + 0.6;
+}
+
+// The magic wand: a harp run that blooms into a shimmering chord.
+export function magic(ctx, dest, t, { gain = 0.07 } = {}) {
+  harp(ctx, dest, t, { from: 5, count: 11, step: 0.04, gain });
+  const out = soft(ctx, dest, 2400);
+  const t2 = t + 0.38;
+  for (const [n, det] of [[10, -7], [12, 6], [13, -4], [15, 5]]) {
+    const o = osc(ctx, 'sine', noteFreq(n), t2, 1.7);
+    o.detune.value = det;
+    const vib = osc(ctx, 'sine', 5.2, t2, 1.7);
+    const vg = ctx.createGain();
+    vg.gain.value = 3;
+    vib.connect(vg).connect(o.detune);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t2);
+    g.gain.exponentialRampToValueAtTime(gain * 0.45, t2 + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t2 + 1.6);
+    o.connect(g).connect(out);
+  }
+  return 2.1;
+}
+
+// ---------------------------------------------------------------- arrivals and goodbyes
+
+// A new fish has arrived: a soft "ta-ta-DAA!" with a warm chord and a twinkle on top.
+export function fanfare(ctx, dest, t, { gain = 0.08 } = {}) {
+  const out = soft(ctx, dest, 2600);
+  mallet(ctx, out, t, noteFreq(3), gain, 0.22);
+  mallet(ctx, out, t + 0.12, noteFreq(3), gain * 0.8, 0.2);
+  [5, 7, 8].forEach((n, i) => mallet(ctx, out, t + 0.26 + i * 0.014, noteFreq(n), gain * 0.85, 0.9));
+  for (const n of [5, 7, 8]) {
+    const o = osc(ctx, 'sine', noteFreq(n), t + 0.26, 1.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t + 0.26);
+    g.gain.exponentialRampToValueAtTime(gain * 0.3, t + 0.33);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.75);
+    o.connect(g).connect(out);
+  }
+  sparkle(ctx, dest, t + 0.36, { from: 10, count: 5, gain: 0.035, step: 0.05 });
+  return 1.9;
+}
+
+// A music-box tine for the night-time lullabies: a ringing fundamental with quickly fading
+// metallic partials.
+export function musicBox(ctx, dest, t, { note = 9, gain = 0.1 } = {}) {
+  const out = soft(ctx, dest, 3000);
+  const f = noteFreq(note);
+  for (const [ratio, level, decay] of [[1, 1, 1.6], [2, 0.16, 0.5], [3.98, 0.07, 0.24], [5.4, 0.035, 0.12]]) {
+    const o = osc(ctx, 'sine', f * ratio, t, decay + 0.05);
+    const g = ctx.createGain();
+    env(g, t, gain * level, 0.004, decay);
+    o.connect(g).connect(out);
+  }
+  return 1.7;
+}
+
+// A fish swimming out of the aquarium: "bye-bye~" (it waves while it sings).
+export function goodbye(ctx, dest, t, { base = 6, gain = 0.09 } = {}) {
+  const out = soft(ctx, dest, 2400);
+  const f = (s) => noteFreq(base + s);
+  mallet(ctx, out, t, f(2), gain, 0.3);
+  mallet(ctx, out, t + 0.22, f(0), gain, 0.3);
+  glide(ctx, out, t + 0.44, f(1), f(-1), 0.4, gain * 0.5);
+  return 1.0;
+}
+
+export const RECIPES = { bloop, pling, sparkle, fishTune, puffup, nom, splash, whoosh, chime, clickclack, boing, pop, puff, treasure, tock, plop, morph, brush, pour, blink, harp, magic, fanfare, goodbye, musicBox };

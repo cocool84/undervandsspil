@@ -181,7 +181,7 @@ export class Factory {
     this.ui.setStep(i);
     this.frame();
     if (changed) {
-      this.app.audio.play('tock', { note: 8 + i });
+      this.app.audio.play('plop', { note: 7 + i });
       // a twirl to show off — but straight to work in the painting step
       this.yawGoal = Math.round(this.extraYaw / TAU) * TAU + (i === 1 ? 0 : i % 2 ? TAU : -TAU);
       this.spinVel = 0;
@@ -200,7 +200,7 @@ export class Factory {
         d.shape = i;
         this.buildFish();
       }
-      audio.play('boing', { base: [330, 392, 349, 294][i], gain: 0.11 });
+      audio.play('morph', { note: [6, 7, 6, 5][i] });
       this.hop(1.2);
       this.sparkle(10);
     } else if (kind === 'color') {
@@ -215,7 +215,7 @@ export class Factory {
         d.colorIndex = i;
         d.filled = true;
         this.painter.setBase(c);
-        audio.play('bloop', { note: 5 + i });
+        audio.play('pour', { note: 6 + (i % 5) });
         this.hop(1);
         this.splat(c, 14);
       } else {
@@ -225,12 +225,13 @@ export class Factory {
       }
     } else if (kind === 'pattern') {
       d.pattern = i;
-      audio.play('sparkle', { from: 7 + i, count: 5, gain: 0.05 });
+      if (i === 3) audio.play('harp', { from: 5, count: 10 });
+      else audio.play('sparkle', { from: 7 + i, count: 5, gain: 0.05 });
       this.hop(1);
       this.sparkle(i === 3 ? 18 : 10, i === 3 ? null : '#fff2b0');
     } else if (kind === 'eyes') {
       d.eyes = i;
-      audio.play('pling', { note: 8 + i, gain: 0.09, decay: 0.7 });
+      audio.play('blink', { note: 8 + i });
       this.hop(0.8);
       this.fish.eyePop.kick(5);
       this.fish.blinkT = 0;
@@ -250,9 +251,7 @@ export class Factory {
 
   wand() {
     if (this.leaving || this.magic) return;
-    const { audio } = this.app;
-    audio.play('sparkle', { from: 6, count: 10, gain: 0.06, step: 0.05 });
-    audio.play('chime', { up: true, gain: 0.07 }, 0.3);
+    this.app.audio.play('magic');
     this.magic = { t: 0, applied: false };
     this.spinVel += 22;
   }
@@ -298,7 +297,7 @@ export class Factory {
     this.leaving = { t: 0 };
     this.hop(1.6);
     this.app.audio.play('whoosh', { up: true, gain: 0.09, dur: 0.8 });
-    this.app.audio.play('sparkle', { from: 8, count: 8, gain: 0.06 }, 0.1);
+    this.app.audio.play('harp', { from: 7, count: 7, step: 0.05, gain: 0.06 }, 0.08);
     setTimeout(() => this.app.closeFactory({ release: dna }), 620);
     return dna;
   }
@@ -339,6 +338,13 @@ export class Factory {
         this.painter.strokeTo(e.pointerId, hit, this.draft.brush);
         this.fingerAt = hit.point.clone();
         this.draft.kind = 'design';
+        // a soft swish while the brush moves (brighter when it moves fast)
+        const now = performance.now();
+        const speed = Math.min(Math.hypot(e.clientX - (p.px ?? e.clientX), e.clientY - (p.py ?? e.clientY)) / Math.max(now - (p.pt ?? now), 8) / 1.2, 1);
+        p.px = e.clientX;
+        p.py = e.clientY;
+        p.pt = now;
+        this.app.audio.play('brush', { speed });
       } else {
         this.painter.endStroke(e.pointerId);
       }

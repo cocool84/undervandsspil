@@ -108,14 +108,14 @@ world.school.onSplash = (fish) => {
   world.fx.confetti(p, 34);
   rig.kick.set(0, -0.14, -0.22);
   audio.play('splash', { gain: 0.2, bubbles: 4 });
-  audio.play('treasure', { gain: 0.05 }, 0.12);
+  audio.play('fanfare', {}, 0.12);
 };
 // …and once it has arrived the others come to say hello and the crab dances.
 world.school.onArrive = (fish) => {
   world.fx.love(fish.pos, 8);
   world.school.curious(fish.pos.clone(), 4, fish);
   world.crab.celebrate();
-  audio.play('chime', { up: true, gain: 0.07 });
+  audio.play('fishTune', { trick: 'jump', base: fish.voice }); // "hello!"
   setTimeout(() => {
     const near = world.school.fish.filter((f) => f !== fish && f.state !== 'leave').sort((a, b) => a.pos.distanceTo(fish.pos) - b.pos.distanceTo(fish.pos));
     near.slice(0, 3).forEach((f, i) => {
@@ -123,6 +123,12 @@ world.school.onArrive = (fish) => {
       audio.play('fishTune', { base: f.voice, short: true }, 0.01 + i * 0.18);
     });
   }, 1300);
+};
+
+// A fish that has to make room waves goodbye and sings "bye-bye".
+world.school.onLeave = (fish) => {
+  world.fx.love(fish.pos, 2);
+  audio.play('goodbye', { base: fish.voice });
 };
 
 // ---------------------------------------------------------------- aquarium ⇄ fish factory

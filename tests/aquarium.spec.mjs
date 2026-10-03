@@ -339,16 +339,20 @@ test('a finger gliding through the water leaves a trail that fish follow', async
 
 test('every sound is soft: no loud peaks, little treble, clearly above the ambience', async ({ page }) => {
   await openApp(page, '?autostart');
-  const { recipes, ambience } = await page.evaluate(() => window.__aq.app.audio.analyze());
-  console.log('ambience', JSON.stringify(ambience));
+  const { recipes, ambience, ambienceNight } = await page.evaluate(() => window.__aq.app.audio.analyze());
+  console.log('ambience', JSON.stringify(ambience), 'night', JSON.stringify(ambienceNight));
   console.log('sound analysis', JSON.stringify(recipes));
-  // the calm bed never pushes the limiter and stays well under every tap
+  // the calm bed never pushes the limiter and stays well under every tap; at night the
+  // music box lullaby stays gentle too
   expect(ambience.peakDb).toBeLessThanOrEqual(-18);
+  expect(ambienceNight.peakDb).toBeLessThanOrEqual(-18);
+  expect(ambienceNight.loudest).toBeLessThanOrEqual(ambience.loudest + 4);
   for (const [name, r] of Object.entries(recipes)) {
     expect(r.peakDb, `${name} peak`).toBeLessThanOrEqual(-6);
     expect(r.trebleRatio, `${name} treble`).toBeLessThan(0.12);
     // (the whoosh is only ever an accent under the day/night chime)
     if (name !== 'whoosh') expect(r.loudness - ambience.loudest, `${name} over ambience`).toBeGreaterThanOrEqual(8);
+    if (name !== 'whoosh' && name !== 'brush') expect(r.loudness - ambienceNight.loudest, `${name} over night ambience`).toBeGreaterThanOrEqual(5);
   }
 });
 
