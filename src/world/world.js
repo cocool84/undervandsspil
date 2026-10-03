@@ -68,7 +68,6 @@ export class World {
       { x: 2.0, y: sandHeight(2.0, 0.9) + 0.8, z: 0.9, r: 1.45 }, // chest
     ];
     this.school = new School({ scene, rig, shadows: this.shadows, pushers: this.seaweed.pushers, obstacles });
-    if (!this.school.grid) this.school.addStarters();
 
     // effects, food and treasure
     this.fx = new Fx();
@@ -142,6 +141,10 @@ export class World {
     this.treasure.update(dt);
     this.fx.update();
     this.school.update(t, dt, camera, U.uNight.value > 0.5);
+    // a fish diving in from the surface pulls a stream of bubbles behind it
+    for (const f of this.school.fish) {
+      if (f.splashing && f.splashed && Math.random() < 0.8) this.bubbles.spawn(f.pos.x + (Math.random() - 0.5) * 0.6, f.pos.y + 0.5, f.pos.z, 0.05 + Math.random() * 0.12, 0.9, 0.08);
+    }
     this.shadows.begin();
     this.school.castShadows();
     const c = this.crab.worldCenter;

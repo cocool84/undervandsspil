@@ -30,12 +30,14 @@ export function wrapAngle(a) {
 }
 
 export class Fish {
-  constructor(dna) {
+  // `paint` (fish factory): an existing paint canvas/texture to wear instead of its own.
+  constructor(dna, { paint = null } = {}) {
     this.dna = dna;
     this.persona = personality(dna);
     const { geometry, meta } = fishGeometry(dna.shape);
     this.meta = meta;
-    this.paint = createPaint(dna);
+    this.ownsPaint = !paint;
+    this.paint = paint ?? createPaint(dna);
     this.material = createFishMaterial({
       texture: this.paint.texture,
       meta,
@@ -86,6 +88,10 @@ export class Fish {
     this.puff = new Spring(0, 30, 6);
     this.stretch = new Spring(1, 200, 12);
     this.eyePop = new Spring(1, 160, 9);
+    this.bounce = new Spring(1, 170, 9); // vertical squash & stretch of a hop
+    this.still = false; // hold the body still (finger painting)
+    this.splashing = false; // diving in from the surface (a newly released fish)
+    this.lookOverride = null;
     this.flash = 0;
     this.mouth = 0;
     this.prevSpeed = 0;
@@ -103,6 +109,22 @@ export class Fish {
 
   get busy() {
     return this.state === 'trick' || this.state === 'leave' || this.state === 'enter';
+  }
+
+  // A happy little hop (fish factory): squash, stretch, eyes pop, a big smile.
+  hop(strength = 1, happy = 0.85) {
+    this.bounce.kick(-3.4 * strength);
+    this.eyePop.kick(2.4 * strength);
+    this.happy.kick(4 * happy);
+    this.happy.target = happy;
+    this.flash = 0.45 * strength;
+    this.giggleT = 0.45;
+  }
+
+  // Time to go: a little goodbye wiggle towards the child, then away to the nearest side.
+  leave(dir) {
+    if (this.state === 'leave') return;
+    this.setState('leave', { leaveDir: dir, gazeYaw: dir > 0 ? -Math.PI / 2 + 0.5 : -Math.PI / 2 - 0.5 });
   }
 
   // Tapped! A happy trick — a different one each time.
@@ -167,7 +189,7 @@ export class Fish {
 
   dispose() {
     this.material.dispose();
-    this.paint.texture.dispose();
+    if (this.ownsPaint) this.paint.texture.dispose();
   }
 
   // Called by the School after it has filled this.acc.
@@ -198,6 +220,9 @@ export class Fish {
         this.setState('wander');
         this.happy.target = 0;
       }
+    } else if (this.state === 'leave' && this.stateT < 0.9) {
+      v.multiplyScalar(Math.exp(-dt * 3)); // stop to wave goodbye
+      this.happy.target = 1;
     }
     this.fullFor = Math.max(0, this.fullFor - dt);
 
@@ -216,15 +241,18 @@ export class Fish {
     // ---- orientation: yaw follows the velocity; U-turns go via facing the viewer
     const flat = Math.hypot(v.x, v.z);
     let targetYaw = flat > 0.05 ? Math.atan2(-v.z, v.x) : this.yaw;
-    if (this.state === 'gaze') targetYaw = this.gazeYaw;
+    const waving = this.state === 'leave' && this.stateT < 0.9;
+    if (this.state === 'gaze' || waving) targetYaw = this.gazeYaw;
     let diff = wrapAngle(targetYaw - this.yaw);
     if (Math.abs(diff) > 2.6) diff = (Math.cos(this.yaw) > 0 ? -1 : 1) * Math.abs(diff);
     const dyaw = diff * Math.min(1, dt * 2.6);
     this.yaw = wrapAngle(this.yaw + dyaw);
     this.yawRate = damp(this.yawRate, dyaw / Math.max(dt, 1e-3), 8, dt);
-    const targetPitch = this.state === 'gaze' ? 0.08 : clamp(Math.atan2(v.y, flat + 0.4) * 0.7, -0.32, 0.32);
-    this.pitch = damp(this.pitch, targetPitch, 4, dt);
+    let targetPitch = this.state === 'gaze' ? 0.08 : clamp(Math.atan2(v.y, flat + 0.4) * 0.7, -0.32, 0.32);
+    if (this.splashing) targetPitch = clamp(Math.atan2(v.y, flat + 0.3), -1.25, 0.6); // nose-first dive
+    this.pitch = damp(this.pitch, targetPitch, this.splashing ? 8 : 4, dt);
     this.roll = damp(this.roll, clamp(-this.yawRate * 0.2, -0.45, 0.45), 5, dt);
+    if (waving) this.roll = Math.sin(this.stateT * 15) * 0.32 * Math.sin(Math.PI * this.stateT / 0.9);
     _e.set(this.roll, this.yaw, this.pitch, 'YZX');
     this.mesh.quaternion.setFromEuler(_e);
     if (this.state === 'trick' && AXIS[this.trickName]) {
@@ -233,15 +261,36 @@ export class Fish {
       this.mesh.quaternion.multiply(_qt);
     }
 
+    this.animate(t, dt, camera, night, clamp(speed / this.cruise, 0, 2.2), fwdAcc);
+  }
+
+  // On display in the fish factory: no physics. The factory sets the position and the turn;
+  // the fish keeps breathing, blinking, looking about and hopping.
+  display(t, dt, camera, { yaw = 0, pitch = 0, roll = 0, look = null, spin = null } = {}) {
+    this.stateT += dt;
+    this.yaw = yaw;
+    _e.set(roll, yaw, pitch, 'YZX');
+    this.mesh.quaternion.setFromEuler(_e);
+    if (spin) {
+      _qt.setFromAxisAngle(spin.axis, spin.angle);
+      this.mesh.quaternion.multiply(_qt);
+    }
+    this.lookOverride = look;
+    this.animate(t, dt, camera, false, this.still ? 0 : 0.45, 0);
+  }
+
+  // Tail and fins, blinking, eyes, puffing, mouth — and everything the shader needs.
+  animate(t, dt, camera, night, frac, fwdAcc) {
+    const v = this.vel;
+    const P = this.persona;
     // ---- swimming animation
     const def = this.meta.def;
-    const frac = clamp(speed / this.cruise, 0, 2.2);
     const gazing = this.state === 'gaze' ? 1 : 0;
     this.swimPhase += dt * (3.2 + frac * 5.5 + gazing * 4) * P.wiggle * TEMPO[this.dna.shape];
-    const ampTarget = def.swimAmp * (0.5 + 0.5 * frac + this.spurt * 0.6) * (night ? 0.75 : 1);
-    this.swimAmp = damp(this.swimAmp, ampTarget, 3, dt);
+    const ampTarget = this.still ? 0 : def.swimAmp * (0.5 + 0.5 * frac + this.spurt * 0.6) * (night ? 0.75 : 1);
+    this.swimAmp = damp(this.swimAmp, ampTarget, this.still ? 12 : 3, dt);
     this.finPhase += dt * (7 + (1 - Math.min(frac, 1)) * 6);
-    this.bend = damp(this.bend, clamp(-this.yawRate * 0.22, -0.42, 0.42), 6, dt);
+    this.bend = damp(this.bend, this.still ? 0 : clamp(-this.yawRate * 0.22, -0.42, 0.42), 6, dt);
     this.stretch.target = 1 + clamp(fwdAcc * 0.025, -0.06, 0.1);
     const s = this.stretch.update(dt);
 
@@ -260,7 +309,9 @@ export class Fish {
     }
 
     // ---- where the eyes look
-    if (this.state === 'gaze' || this.state === 'trick') {
+    if (this.lookOverride) {
+      this.lookTarget.copy(this.lookOverride);
+    } else if (this.state === 'gaze' || this.state === 'trick' || (this.state === 'leave' && this.stateT < 0.9)) {
       this.lookTarget.copy(camera.position);
     } else if (this.state === 'curious' || this.state === 'follow') {
       this.lookTarget.copy(this.target);
@@ -324,7 +375,8 @@ export class Fish {
     u.uBend.value = this.bend;
     u.uFinPhase.value = this.finPhase;
     u.uPuff.value = puff;
-    u.uSquash.value.set(s, 1 / Math.sqrt(s), 1 / Math.sqrt(s));
+    const by = clamp(this.bounce.update(dt), 0.6, 1.45);
+    u.uSquash.value.set(s / Math.sqrt(by), by / Math.sqrt(s), 1 / Math.sqrt(s * by));
     const eb = this.dna.eyes === 0 ? 1.1 : this.dna.eyes === 3 ? 1.06 : 1.0;
     u.uEyeScale.value.set(eb * eyePop, eb * eyePop);
     u.uBlink.value = blink;

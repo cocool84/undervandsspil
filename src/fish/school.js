@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { Fish, wrapAngle } from './fish.js';
-import { STARTERS, makeDNA } from './dna.js';
+import { makeDNA } from './dna.js';
 import { sandHeight } from '../world/sand.js';
 import { WORLD, flags } from '../config.js';
 import { clamp } from '../util/math.js';
@@ -31,6 +31,9 @@ export class School {
     this.night = false;
     this.food = null; // set by World: flakes to chase
     this.onEat = null; // (fish, full) => void
+    this.onSplash = null; // (fish) => void — a released fish breaks into view
+    this.onArrive = null; // (fish) => void — …and has arrived
+    this.onGone = null; // (fish) => void — a fish has swum out of the aquarium
     this.foodScan = 0;
     this.grid = flags.fishgrid ? (new URLSearchParams(location.search).get('fishgrid') || 'patterns') : null;
     if (this.grid) this.buildGrid(this.grid);
@@ -55,13 +58,36 @@ export class School {
     return out;
   }
 
-  add(dna, { spawn = 'random' } = {}) {
+  // spawn: 'random' (somewhere inside), 'side' (swims in from the left or right edge),
+  // 'splash' (dives in from the surface: a fish fresh from the factory) or 'none'.
+  add(dna, { spawn = 'random', delay = 0 } = {}) {
     const f = new Fish(dna);
     if (spawn === 'random') {
       this.randomSpot(f.pos);
       const dir = Math.random() < 0.5 ? 1 : -1;
       f.vel.set(dir * f.cruise, 0, 0);
       f.yaw = dir > 0 ? 0 : Math.PI;
+    } else if (spawn === 'side') {
+      const side = Math.random() < 0.5 ? 1 : -1;
+      this.randomSpot(f.target);
+      const b = this.boundsAt(f.target.z);
+      f.pos.set(side > 0 ? b.xMax + 2.6 : b.xMin - 2.6, f.target.y, f.target.z);
+      f.vel.set(-side * f.cruise, 0, 0);
+      f.yaw = side > 0 ? Math.PI : 0;
+      f.setState('enter', { entry: 'side' });
+    } else if (spawn === 'splash') {
+      const z = 1.6;
+      const b = this.boundsAt(z);
+      // just above the top of the picture — or through the surface, where it can be seen
+      const top = this.rig.screenToPlaneZ(0, 1, z, _tmp).y;
+      f.pos.set(b.xMin + 3 + Math.random() * Math.max(b.xMax - b.xMin - 6, 0.1), top > WORLD.surfaceY ? WORLD.surfaceY + 0.8 : top + 1.4, z);
+      f.vel.set(0, 0, 0);
+      f.enterDelay = delay;
+      f.yaw = Math.random() < 0.5 ? -0.5 : Math.PI + 0.5;
+      f.pitch = -1.2;
+      f.splashing = true;
+      f.splashTop = Math.min(top, WORLD.surfaceY);
+      f.setState('enter', { entry: 'splash' });
     }
     this.fish.push(f);
     this.scene.add(f.mesh);
@@ -73,18 +99,6 @@ export class School {
     if (i >= 0) this.fish.splice(i, 1);
     this.scene.remove(f.mesh);
     f.dispose();
-  }
-
-  addStarters(count = STARTERS.length) {
-    // spread the starters evenly over the aquarium: depth, left/right and near/far
-    const depths = [0.12, 0.88, 0.5, 0.3, 0.7, 0.2, 0.6, 0.8];
-    const homes = [0.1, 0.9, 0.35, 0.65, 0.2, 0.8, 0.5, 0.45];
-    STARTERS.slice(0, count).forEach((dna, i) => {
-      const f = this.add(dna);
-      f.persona.depth = depths[i % depths.length];
-      f.persona.home = homes[i % homes.length];
-      f.persona.homeZ = -4.5 + ((i * 3) % 8) * 1.0;
-    });
   }
 
   // ---------------------------------------------------------------- QA grid (?fishgrid)
@@ -118,6 +132,32 @@ export class School {
     const v = f.vel;
     const P = f.persona;
     const acc = f.acc.set(0, 0, 0);
+
+    if (f.state === 'leave') {
+      // wave goodbye first, then off to the side — no walls, no obstacles
+      if (f.stateT > 0.9) {
+        acc.x += (f.leaveDir * f.cruise * 2.2 - v.x) * 1.6;
+        acc.y += (0.25 - v.y) * 0.6;
+        acc.z += -v.z * 0.8;
+      }
+      return;
+    }
+    if (f.state === 'enter' && f.entry === 'splash') {
+      // wait above the water until the bubble curtain has cleared, then dive in
+      if (f.stateT < f.enterDelay) {
+        v.set(0, 0, 0);
+        return;
+      }
+      if (!f.dived) {
+        f.dived = true;
+        v.set((Math.random() - 0.5) * 1.5, -11, 0);
+      }
+      // water brakes the dive; a little float back up at the end
+      acc.y += -v.y * 2.4 + 0.6;
+      acc.x += -v.x * 1.2;
+      acc.z += -v.z * 1.2;
+      return;
+    }
 
     let sx = 0, sy = 0, sz = 0;
     let ax = 0, ay = 0, az = 0, na = 0;
@@ -173,7 +213,16 @@ export class School {
     const flat = Math.hypot(v.x, v.z);
     const heading = flat > 0.05 ? Math.atan2(-v.z, v.x) : f.heading;
     f.heading = heading + (Math.sin(f.wanderPhase * 0.9 + f.dna.seed) + 0.5 * Math.sin(f.wanderPhase * 2.3 + f.dna.seed * 0.7)) * 0.55;
-    if (f.state === 'curious' || f.state === 'follow' || (f.state === 'food' && f.flake)) {
+    if (f.state === 'enter') {
+      // swimming in from the side towards a free spot
+      const dx = f.target.x - p.x;
+      const dy = f.target.y - p.y;
+      const dz = f.target.z - p.z;
+      const dist = Math.hypot(dx, dy, dz) + 1e-4;
+      acc.x += ((dx / dist) * f.cruise * 1.5 - v.x) * 2;
+      acc.y += ((dy / dist) * f.cruise * 1.5 - v.y) * 2;
+      acc.z += ((dz / dist) * f.cruise * 1.5 - v.z) * 2;
+    } else if (f.state === 'curious' || f.state === 'follow' || (f.state === 'food' && f.flake)) {
       // swim to the point of interest, slowing down on arrival
       const target = f.state === 'food' ? f.flake.pos : f.target;
       const tb = this.boundsAt(target.z);
@@ -209,7 +258,7 @@ export class School {
       acc.x += (homeX - p.x) * 0.035;
       acc.z += (P.homeZ - p.z) * 0.08;
     }
-    const m = 0.7 + f.radius * 0.6;
+    const m = f.state === 'enter' ? -4 : 0.7 + f.radius * 0.6;
     if (p.x > b.xMax - m) acc.x -= (p.x - (b.xMax - m)) * 3.2;
     if (p.x < b.xMin + m) acc.x += (b.xMin + m - p.x) * 3.2;
     if (p.y < floor + 0.5) acc.y += (floor + 0.5 - p.y) * 4;
@@ -273,9 +322,11 @@ export class School {
     this.updateFood(dt);
     for (const f of fish) this.steer(f, t, dt, camera);
     for (const f of fish) f.integrate(t, dt, camera, night);
+    this.updateComings(camera);
 
     // safety net: never lose a fish far outside the view (e.g. after rotating the iPad)
     for (const f of fish) {
+      if (f.state === 'leave' || f.state === 'enter') continue;
       const b = this.boundsAt(f.pos.z);
       f.pos.x = clamp(f.pos.x, b.xMin - 3, b.xMax + 3);
       f.pos.y = clamp(f.pos.y, sandHeight(f.pos.x, f.pos.z) + 0.6, WORLD.surfaceY - 0.8);
@@ -288,6 +339,46 @@ export class School {
       if (f) this.pushers[i].set(f.pos.x, f.pos.y, f.pos.z, f.radius * 1.3);
       else this.pushers[i].set(0, -100, 0, 0);
     }
+  }
+
+  // Fish swimming in (from the side, or diving in fresh from the factory) and fish leaving.
+  updateComings(camera) {
+    let gone = null;
+    for (const f of this.fish) {
+      if (f.state === 'enter') {
+        if (f.entry === 'splash') {
+          if (!f.splashed && f.pos.y < f.splashTop) {
+            f.splashed = true;
+            this.onSplash?.(f);
+          }
+          if (f.dived && f.vel.y > -0.9 && f.stateT > f.enterDelay + 0.6) {
+            f.splashing = false;
+            const facingRight = Math.cos(f.yaw) > 0;
+            f.setState('gaze', { gazeYaw: facingRight ? -Math.PI / 2 + 0.62 : -Math.PI / 2 - 0.62, gazeFor: 2.2 });
+            f.happy.target = 1;
+            this.onArrive?.(f);
+          }
+        } else {
+          const b = this.boundsAt(f.pos.z);
+          if ((f.pos.x > b.xMin + 1.5 && f.pos.x < b.xMax - 1.5) || f.stateT > 12) f.setState('wander');
+        }
+      } else if (f.state === 'leave' && f.stateT > 1) {
+        const b = this.boundsAt(f.pos.z);
+        if (f.pos.x > b.xMax + 3 || f.pos.x < b.xMin - 3 || f.stateT > 14) (gone ??= []).push(f);
+      }
+    }
+    if (gone) {
+      for (const f of gone) {
+        this.remove(f);
+        this.onGone?.(f);
+      }
+    }
+  }
+
+  // Send a fish out of the aquarium: towards the nearer side.
+  sendAway(f) {
+    const b = this.boundsAt(f.pos.z);
+    f.leave(f.pos.x > (b.xMin + b.xMax) / 2 ? 1 : -1);
   }
 
   // Hungry fish go for the nearest falling flake; eating happens at the nose.
@@ -329,8 +420,8 @@ export class School {
   }
 
   // A water tap: the nearest one or two fish come to have a look.
-  curious(point, count = 2) {
-    const free = this.fish.filter((f) => !f.busy && f.state !== 'food');
+  curious(point, count = 2, exclude = null) {
+    const free = this.fish.filter((f) => !f.busy && f.state !== 'food' && f !== exclude);
     free.sort((a, b) => a.pos.distanceTo(point) / a.persona.curiosity - b.pos.distanceTo(point) / b.persona.curiosity);
     free.slice(0, count).forEach((f) => {
       if (f.pos.distanceTo(point) < 14) f.curious(point);
@@ -350,7 +441,7 @@ export class School {
     let best = null;
     let bestScore = Infinity;
     for (const f of this.fish) {
-      if (f.state === 'leave') continue;
+      if (f.state === 'leave' || f.state === 'enter') continue;
       _ndc.copy(f.pos).project(camera);
       if (_ndc.z > 1) continue;
       const sx = (_ndc.x * 0.5 + 0.5) * width;
@@ -382,6 +473,7 @@ export class School {
       _ndc.copy(f.pos).project(camera);
       return {
         id: f.dna.id,
+        kind: f.dna.kind,
         shape: f.dna.shape,
         state: f.state,
         x: (_ndc.x * 0.5 + 0.5) * width,

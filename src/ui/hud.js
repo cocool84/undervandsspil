@@ -1,15 +1,21 @@
-// The on-screen buttons: feed, day/night and a discreet sound toggle. They react on
-// pointerdown (toddlers press and hold, slide and tap imprecisely) with a squishy press.
+// The on-screen buttons: feed, day/night, the fish factory and a discreet sound toggle.
+// They react on pointerdown (toddlers press and hold, slide and tap imprecisely) with a
+// squishy press.
+
+import { ICONS } from './icons.js';
 
 export class Hud {
-  constructor({ onFeed, onNight, onSound }) {
+  constructor({ onFeed, onNight, onSound, onFactory }) {
     this.el = document.getElementById('hud');
     this.feed = document.getElementById('btn-feed');
     this.night = document.getElementById('btn-night');
     this.sound = document.getElementById('btn-sound');
+    this.factory = document.getElementById('btn-factory');
+    this.factory.innerHTML = ICONS.factory;
     this.bind(this.feed, onFeed);
     this.bind(this.night, onNight);
     this.bind(this.sound, onSound);
+    this.bind(this.factory, onFactory);
   }
 
   bind(btn, fn) {
@@ -32,6 +38,10 @@ export class Hud {
 
   show() {
     this.el.classList.add('show');
+  }
+
+  hide() {
+    this.el.classList.remove('show');
   }
 
   setNight(on) {

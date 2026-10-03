@@ -7,6 +7,9 @@ import { Ambience } from './ambience.js';
 
 const MAX_VOICES = 16;
 export const AMBIENCE_LEVEL = 0.125; // ambience bus gain, well under the effects
+
+// The parents' sea-sound slider (0..1, 0.5 = default) → ambience bus gain.
+const ambienceGain = (amount) => AMBIENCE_LEVEL * Math.pow(Math.max(amount, 0) / 0.5, 1.5);
 // minimum seconds between two sounds of the same kind (many little fingers…)
 const MIN_GAP = { bloop: 0.05, fishTune: 0.07, puffup: 0.3, nom: 0.08, pop: 0.05, puff: 0.08, clickclack: 0.12, boing: 0.12, tock: 0.04, sparkle: 0.1, pling: 0.03, splash: 0.2, whoosh: 0.3, chime: 0.3, treasure: 0.4 };
 
@@ -37,6 +40,7 @@ export class AudioEngine {
     this.ambienceBus = null;
     this.ambience = null;
     this.volume = 0.7;
+    this.ambienceAmount = 0.5;
     this.muted = false;
     this.voices = 0;
     this.last = {};
@@ -64,7 +68,7 @@ export class AudioEngine {
     this.sfx = ctx.createGain();
     this.sfx.connect(this.master);
     this.ambienceBus = ctx.createGain();
-    this.ambienceBus.gain.value = AMBIENCE_LEVEL;
+    this.ambienceBus.gain.value = ambienceGain(this.ambienceAmount);
     this.ambienceBus.connect(this.master);
     this.ambience = new Ambience(ctx, this.ambienceBus);
     return ctx;
@@ -104,6 +108,11 @@ export class AudioEngine {
   setVolume(v) {
     this.volume = v;
     this.applyGain();
+  }
+
+  setAmbience(amount) {
+    this.ambienceAmount = amount;
+    if (this.ambienceBus) this.ambienceBus.gain.setTargetAtTime(ambienceGain(amount), this.ctx.currentTime, 0.1);
   }
 
   applyGain() {

@@ -106,3 +106,27 @@ export function updateEnvironment(t, dt) {
 export function withShared(own = {}) {
   return Object.assign({}, U, own);
 }
+
+// The fish factory is always lit like a bright, sunny day — whatever time it is in the
+// aquarium — and has no fog: materials in its scene swap the shared light for these.
+const STUDIO = {
+  uNight: { value: 0 },
+  uKeyColor: { value: col('#fff4de', 0.98) },
+  uSkyAmb: { value: col('#c9f2ff', 0.5) },
+  uGroundAmb: { value: col('#5d8fc0', 0.36) },
+  uRimColor: { value: col('#c8fbff', 0.3) },
+  uWaterTop: { value: DAY.top.clone() },
+  uWaterMid: { value: DAY.mid.clone() },
+  uWaterDeep: { value: DAY.deep.clone() },
+  uSunGlow: { value: DAY.glow.clone() },
+  uFogDensity: { value: 0 },
+  uSunDir: { value: new THREE.Vector3(-0.4, 1, 0.75).normalize() },
+  uCausticsStrength: { value: 0.55 },
+};
+
+export function inStudio(material) {
+  Object.assign(material.uniforms, STUDIO);
+  // big on screen, the eyes' sparkle would bloom over the pupils
+  if (material.uniforms.uGlint) material.uniforms.uGlint = { value: 1.0 };
+  return material;
+}

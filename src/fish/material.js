@@ -97,6 +97,7 @@ uniform float uGlow;
 uniform float uFlash;
 uniform vec4 uFace;
 uniform vec4 uBlush;
+uniform float uGlint;
 varying vec2 vUv;
 varying vec3 vRest;
 varying vec3 vN;
@@ -138,7 +139,7 @@ vec3 drawEye(vec3 N) {
   col = mix(col, vec3(0.012, 0.012, 0.03), 1.0 - smoothstep(pr - aa, pr + aa, ir));
   float h1 = 1.0 - smoothstep(0.19 - aa, 0.19 + aa, length(p - vec2(0.24, 0.3)));
   float h2 = 1.0 - smoothstep(0.085 - aa, 0.085 + aa, length(p - vec2(-0.18, -0.24)));
-  col = mix(col, vec3(1.7), max(h1, h2 * 0.9));
+  col = mix(col, vec3(uGlint), max(h1, h2 * 0.9));
 
   // eyelids
   float top = 1.12;
@@ -239,6 +240,7 @@ export function createFishMaterial({ texture, meta, dna, persona, patternColor }
       uGlow: { value: dna.glow ? 1 : 0 },
       uFlash: { value: 0 },
       uFace: { value: meta.face },
+      uGlint: { value: 1.7 },
       uBlush: { value: meta.blush },
       uSwimPhase: { value: 0 },
       uSwimAmp: { value: meta.def.swimAmp },

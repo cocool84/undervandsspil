@@ -1,5 +1,7 @@
-// Akvariet — entry point: wires renderer, world, quality manager, start screen and loop.
+// Akvariet — entry point: wires renderer, world, the fish factory, quality manager, start
+// screen, parents' corner and the loop.
 
+import * as THREE from 'three';
 import { flags, device, TIERS } from './config.js';
 import { createCore } from './core/renderer.js';
 import { CameraRig } from './core/camera.js';
@@ -14,29 +16,39 @@ import { registerServiceWorker } from './sw-client.js';
 import { addNanTest } from './debug.js';
 import { Interaction } from './interact.js';
 import { Hud } from './ui/hud.js';
-import { loadState } from './storage.js';
+import { loadState, saveSettings, requestPersistence } from './storage.js';
+import { Population } from './fish/population.js';
+import { Factory } from './factory/factory.js';
+import { BubbleWipe } from './ui/transition.js';
+import { ParentCorner } from './ui/parent.js';
 
 blockBrowserGestures();
 audio.installUnlockListeners();
+requestPersistence();
 
 const canvas = document.getElementById('scene');
 const core = createCore(canvas);
 const rig = new CameraRig(core.camera);
 const state = { started: false, updateReady: false };
-const app = { core, rig, state, audio, afterRender: null };
+// view: what is on screen ('aquarium' | 'factory'); busy: a bubble transition is running
+const app = { core, rig, state, audio, afterRender: null, view: 'aquarium', busy: false };
 
 const world = new World(core, rig);
 app.world = world;
+const population = new Population(world.school);
+app.population = population;
 
-// ---------------------------------------------------------------- settings, touch, buttons
+// ---------------------------------------------------------------- settings, fish, buttons
 
 const saved = loadState();
 audio.setVolume(saved.settings.volume);
+audio.setAmbience(saved.settings.ambience);
 audio.setMuted(saved.settings.muted);
 if (saved.settings.night) {
   setNight(true, true);
   audio.setNight(true);
 }
+if (!world.school.grid) population.init(saved.fish);
 
 const interaction = new Interaction(app);
 app.interaction = interaction;
@@ -44,12 +56,37 @@ const hud = new Hud({
   onFeed: () => interaction.feed(),
   onNight: () => hud.setNight(interaction.toggleNight()),
   onSound: () => hud.setMuted(interaction.toggleSound()),
+  onFactory: () => app.openFactory(),
 });
 hud.setNight(saved.settings.night);
 hud.setMuted(saved.settings.muted);
 app.hud = hud;
 
-// happy little sounds from the world
+const factory = new Factory(app, { draft: saved.draft });
+app.factory = factory;
+const wipe = new BubbleWipe();
+
+const parent = new ParentCorner({
+  volume: saved.settings.volume,
+  ambience: saved.settings.ambience,
+  onVolume: (v) => {
+    audio.setVolume(v);
+    saveSettings({ volume: v });
+    audio.play('tock', { note: 9 });
+  },
+  onAmbience: (v) => {
+    audio.setAmbience(v);
+    saveSettings({ ambience: v });
+  },
+  onDelete: () => {
+    population.clearOwn();
+    audio.play('chime', { up: false, gain: 0.07 });
+  },
+});
+app.parent = parent;
+
+// ---------------------------------------------------------------- happy little sounds
+
 world.school.onEat = (fish, full) => {
   audio.play('nom');
   world.fx.love(fish.pos, full ? 6 : 2);
@@ -61,6 +98,80 @@ world.onCrabEat = (p) => {
 };
 world.treasure.onBounce = (item) => audio.play('pling', { note: 7 + item.kind * 2 + Math.floor(Math.random() * 3), gain: 0.05, decay: 0.5 });
 
+// A new fish from the factory breaks into the picture: splash, bubbles, confetti…
+const _p = new THREE.Vector3();
+world.school.onSplash = (fish) => {
+  const p = fish.pos;
+  _p.copy(p).project(core.camera);
+  core.finalPass.addRipple(_p.x * 0.5 + 0.5, Math.min(_p.y * 0.5 + 0.5, 0.97), time, 1.3);
+  world.bubbles.burst(p.x, p.y, p.z, 28, 0.7, 0.06, 0.24);
+  world.fx.confetti(p, 34);
+  rig.kick.set(0, -0.14, -0.22);
+  audio.play('splash', { gain: 0.2, bubbles: 4 });
+  audio.play('treasure', { gain: 0.05 }, 0.12);
+};
+// …and once it has arrived the others come to say hello and the crab dances.
+world.school.onArrive = (fish) => {
+  world.fx.love(fish.pos, 8);
+  world.school.curious(fish.pos.clone(), 4, fish);
+  world.crab.celebrate();
+  audio.play('chime', { up: true, gain: 0.07 });
+  setTimeout(() => {
+    const near = world.school.fish.filter((f) => f !== fish && f.state !== 'leave').sort((a, b) => a.pos.distanceTo(fish.pos) - b.pos.distanceTo(fish.pos));
+    near.slice(0, 3).forEach((f, i) => {
+      world.fx.love(f.pos, 3);
+      audio.play('fishTune', { base: f.voice, short: true }, 0.01 + i * 0.18);
+    });
+  }, 1300);
+};
+
+// ---------------------------------------------------------------- aquarium ⇄ fish factory
+
+app.openFactory = () => {
+  if (app.view !== 'aquarium' || app.busy || !state.started) return;
+  app.busy = true;
+  hud.hide();
+  parent.setVisible(false);
+  audio.play('whoosh', { up: true, gain: 0.08 });
+  audio.play('sparkle', { from: 8, count: 6, gain: 0.04 }, 0.2);
+  wipe
+    .play(() => {
+      app.view = 'factory';
+      core.setScene(factory.scene, factory.camera);
+      core.finalPass.uniforms.uDof.value = 0;
+      core.bloom.strength = 0.18; // the fish is big here: keep it crisp
+      factory.show();
+    })
+    .then(() => {
+      app.busy = false;
+    });
+};
+
+app.closeFactory = ({ release = null } = {}) => {
+  if (app.view !== 'factory' || app.busy) return;
+  app.busy = true;
+  audio.play('whoosh', { up: false, gain: 0.08 });
+  wipe
+    .play(() => {
+      factory.hide();
+      app.view = 'aquarium';
+      core.setScene(core.scene, core.camera);
+      core.bloom.strength = 0.5;
+      applyTier(quality.tier);
+      if (release) {
+        population.release(release, 0.75);
+        factory.reset();
+      }
+    })
+    .then(() => {
+      app.busy = false;
+      hud.show();
+      parent.setVisible(true);
+    });
+};
+
+// ---------------------------------------------------------------- quality
+
 const quality = new Quality({ device, flags, onChange: applyTier });
 app.quality = quality;
 
@@ -68,7 +179,7 @@ function applyTier(index) {
   const tier = TIERS[index];
   core.setSize(window.innerWidth, window.innerHeight, quality.dprFor(index));
   core.setBloom(tier.bloom);
-  core.finalPass.uniforms.uDof.value = tier.dof ? 1 : 0;
+  core.finalPass.uniforms.uDof.value = tier.dof && app.view === 'aquarium' ? 1 : 0;
   core.finalPass.uniforms.uTaps.value = Math.max(tier.taps, 8);
   world.applyTier(tier);
 }
@@ -83,6 +194,7 @@ function onResize() {
     const h = window.innerHeight;
     core.setSize(w, h, quality.dprFor(quality.tier));
     rig.frame(w / h);
+    factory.onResize();
     quality.settleFor(1);
   });
 }
@@ -120,7 +232,13 @@ app.start = () => {
   rig.startDive();
   audio.startAmbience();
   audio.play('pop');
-  setTimeout(() => hud.show(), flags.autostart ? 0 : 2300);
+  setTimeout(
+    () => {
+      hud.show();
+      parent.setVisible(true);
+    },
+    flags.autostart ? 0 : 2300,
+  );
 };
 
 // ---------------------------------------------------------------- loop
@@ -151,13 +269,18 @@ function loop(now) {
   debug.frame(dtMs);
 
   updateEnvironment(time, dt);
-  rig.update(time, dt);
-  world.update(time, dt, core.camera);
+  if (app.view === 'factory') {
+    world.caustics.render(core.renderer, time); // the light net still plays on the fish
+    factory.update(time, dt);
+  } else {
+    rig.update(time, dt);
+    world.update(time, dt, core.camera);
+  }
 
   // Behind the start bubble the reef is dreamy and soft; it sharpens during the dive.
   blur += ((state.started ? 0 : 0.9) - blur) * (1 - Math.exp(-dt * 2.2));
   const fp = core.finalPass.uniforms;
-  fp.uGlobalBlur.value = blur < 0.003 ? 0 : blur;
+  fp.uGlobalBlur.value = blur < 0.003 || app.view === 'factory' ? 0 : blur;
   fp.uTime.value = time;
 
   core.renderer.info.reset();
@@ -181,7 +304,7 @@ async function boot() {
   if (flags.nantest) addNanTest(core.scene);
   try {
     await Promise.race([
-      core.renderer.compileAsync(core.scene, core.camera),
+      Promise.all([core.renderer.compileAsync(core.scene, core.camera), core.renderer.compileAsync(factory.scene, factory.camera)]),
       new Promise((resolve) => setTimeout(resolve, 4000)),
     ]);
   } catch {

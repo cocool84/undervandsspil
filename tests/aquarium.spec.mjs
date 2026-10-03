@@ -351,3 +351,179 @@ test('every sound is soft: no loud peaks, little treble, clearly above the ambie
     if (name !== 'whoosh') expect(r.loudness - ambience.loudest, `${name} over ambience`).toBeGreaterThanOrEqual(8);
   }
 });
+
+// ---------------------------------------------------------------- stage 4: fish factory, saving, parents' corner
+
+const KEY = 'undervandsspil.v1';
+
+async function tapEl(page, sel) {
+  const bb = await page.locator(sel).first().boundingBox();
+  await page.touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2);
+}
+
+async function openFactory(page) {
+  await tapEl(page, '#btn-factory');
+  await page.waitForFunction(() => window.__aq.app.view === 'factory' && !window.__aq.app.busy);
+}
+
+const ownFishDNA = (n, kind = 'design', from = 0) =>
+  Array.from({ length: n }, (_, i) => ({ id: `test-${kind}-${from + i}`, born: 1000 + from + i, kind, shape: (from + i) % 4, color: '#3fa9ff', pattern: (from + i) % 4, eyes: (from + i) % 4, glow: true, seed: 5000 + from + i, paint: null, color2: null }));
+
+async function seedFish(page, fish) {
+  await page.evaluate(([key, list]) => localStorage.setItem(key, JSON.stringify({ v: 1, settings: { volume: 0.7 }, fish: list })), [KEY, fish]);
+}
+
+test('fish factory: shape, paint, pattern, eyes, let it go — and it is saved', async ({ page, browserName }, info) => {
+  const errors = await startApp(page);
+  await openFactory(page);
+  expect(await page.evaluate(() => document.body.innerText.trim())).toBe('');
+  await shot(page, info, '30-factory-shape');
+  await tapEl(page, '.fac-options-0 .fac-opt:nth-child(2)'); // the long fish
+  expect(await page.evaluate(() => window.__aq.app.factory.draft.shape)).toBe(1);
+  await tapEl(page, '.fac-next');
+  await tapEl(page, '.fac-options-1 .fac-blob:nth-child(5)'); // the first colour fills the fish: blue
+  expect(await page.evaluate(() => window.__aq.app.factory.draft.color)).toBe('#3fa9ff');
+  await tapEl(page, '.fac-options-1 .fac-blob:nth-child(2)'); // then yellow is the brush
+  expect(await page.evaluate(() => [window.__aq.app.factory.draft.color, window.__aq.app.factory.draft.brush])).toEqual(['#3fa9ff', '#ffd23f']);
+  if (browserName === 'chromium') {
+    // finger painting: a real touch drag across the fish (once it has stopped turning)
+    await page.waitForFunction(() => Math.abs(window.__aq.app.factory.extraYaw - window.__aq.app.factory.yawGoal) < 0.05);
+    const a = await page.evaluate(() => window.__aq.app.factory.ui.freeArea());
+    const cx = (a.left + a.right) / 2;
+    const cy = (a.top + a.bottom) / 2;
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cx - 140, y: cy, id: 1 }] });
+    for (let i = 0; i <= 28; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: cx - 140 + i * 10, y: cy + Math.sin(i * 0.6) * 18, id: 1 }] });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    expect(await page.evaluate(() => window.__aq.app.factory.painter.coverage())).toBeGreaterThan(0.01);
+  }
+  await shot(page, info, '31-factory-paint');
+  await tapEl(page, '.fac-next');
+  await tapEl(page, '.fac-options-2 .fac-opt:nth-child(2)'); // stripes
+  await tapEl(page, '.fac-next');
+  await tapEl(page, '.fac-options-3 .fac-opt:nth-child(4)'); // googly eyes
+  await tapEl(page, '.fac-next');
+  await page.waitForTimeout(500);
+  await shot(page, info, '32-factory-release');
+  await tapEl(page, '.fac-release');
+  await page.waitForFunction(() => window.__aq.app.view === 'aquarium' && !window.__aq.app.busy, null, { timeout: 10_000 });
+  const own = await page.evaluate(() => window.__aq.app.population.own.map((d) => ({ kind: d.kind, shape: d.shape, pattern: d.pattern, eyes: d.eyes, color: d.color, painted: !!d.paint })));
+  expect(own).toHaveLength(1);
+  expect(own[0]).toMatchObject({ kind: 'design', shape: 1, pattern: 1, eyes: 3, color: '#3fa9ff' });
+  if (browserName === 'chromium') expect(own[0].painted).toBe(true);
+  // it dives in and says hello
+  await expect.poll(() => page.evaluate(() => window.__aq.fish().find((f) => f.kind === 'design')?.state), { timeout: 8000 }).toMatch(/gaze|wander|curious/);
+  await page.waitForTimeout(400);
+  await shot(page, info, '33-new-fish');
+  expect(await page.evaluate(() => window.__aq.fish().length)).toBe(9);
+  // saved: still there after a reload, painting and all
+  await page.reload();
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  const after = await page.evaluate(() => window.__aq.app.population.own.map((d) => ({ shape: d.shape, painted: !!d.paint })));
+  expect(after).toEqual([{ shape: 1, painted: browserName === 'chromium' }]);
+  expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.kind === 'design').length)).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test('magic wand: a surprise fish in one tap, out with one more', async ({ page }, info) => {
+  const errors = await startApp(page);
+  await openFactory(page);
+  await tapEl(page, '.fac-wand');
+  await expect.poll(() => page.evaluate(() => window.__aq.app.factory.step)).toBe(4);
+  expect(await page.evaluate(() => window.__aq.app.factory.draft.kind)).toBe('wand');
+  await page.waitForTimeout(600);
+  await shot(page, info, '34-wand');
+  await tapEl(page, '.fac-release');
+  await page.waitForFunction(() => window.__aq.app.view === 'aquarium' && !window.__aq.app.busy, null, { timeout: 10_000 });
+  expect(await page.evaluate(() => window.__aq.app.population.own.map((d) => d.kind))).toEqual(['wand']);
+  // the factory is ready for a new fish
+  expect(await page.evaluate(() => window.__aq.app.factory.step)).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('the unfinished fish is remembered', async ({ page }) => {
+  const errors = await startApp(page);
+  await openFactory(page);
+  await tapEl(page, '.fac-options-0 .fac-opt:nth-child(4)'); // puffer
+  await tapEl(page, '.fac-next');
+  await tapEl(page, '.fac-options-1 .fac-blob:nth-child(3)'); // pink
+  await tapEl(page, '.fac-home');
+  await page.waitForFunction(() => window.__aq.app.view === 'aquarium' && !window.__aq.app.busy);
+  await page.waitForTimeout(700);
+  await page.reload();
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  const d = await page.evaluate(() => ({ ...window.__aq.app.factory.draft, step: window.__aq.app.factory.step }));
+  expect(d).toMatchObject({ shape: 3, color: '#ff5d8f', step: 1 });
+  expect(errors).toEqual([]);
+});
+
+test('never more than 25 fish: starters make room first, then the oldest wand fish', async ({ page }) => {
+  const errors = await openApp(page, '?autostart');
+  await seedFish(page, ownFishDNA(17));
+  await page.reload();
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  expect(await page.evaluate(() => window.__aq.fish().length)).toBe(25);
+  // one more: a starter swims out
+  await page.evaluate(() => window.__aq.app.population.release({ id: 'new-1', born: Date.now(), kind: 'design', shape: 0, color: '#ff5d8f', pattern: 0, eyes: 0, glow: true, seed: 9, paint: null }));
+  const leaving = await page.evaluate(() => window.__aq.fish().filter((f) => f.state === 'leave').map((f) => f.kind));
+  expect(leaving).toEqual(['starter']);
+  await expect.poll(() => page.evaluate(() => window.__aq.fish().length), { timeout: 20_000 }).toBe(25);
+
+  // full of own fish: the oldest wand fish makes room (and is gone for good)
+  await seedFish(page, [...ownFishDNA(2, 'wand', 0), ...ownFishDNA(23, 'design', 2)]);
+  await page.reload();
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.kind === 'starter').length)).toBe(0);
+  await page.evaluate(() => window.__aq.app.population.release({ id: 'new-2', born: Date.now(), kind: 'design', shape: 1, color: '#ff5d8f', pattern: 0, eyes: 0, glow: true, seed: 10, paint: null }));
+  expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.state === 'leave').map((f) => f.id))).toEqual(['test-wand-0']);
+  await page.evaluate(() => window.__aq.app.population.saving);
+  const stored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).fish.map((f) => f.id), KEY);
+  expect(stored).toHaveLength(25);
+  expect(stored).not.toContain('test-wand-0');
+  expect(stored).toContain('new-2');
+  expect(errors).toEqual([]);
+});
+
+test("parents' corner: opens only after a 3-second press; delete brings the starters back", async ({ page }, info) => {
+  const errors = await openApp(page);
+  await seedFish(page, ownFishDNA(3));
+  await page.reload();
+  const more = await startApp(page);
+  const gear = await page.locator('.gear').boundingBox();
+  const gx = gear.x + gear.width / 2;
+  const gy = gear.y + gear.height / 2;
+  // a short press does nothing
+  await page.mouse.move(gx, gy);
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => window.__aq.app.parent.isOpen)).toBe(false);
+  // three seconds open it
+  await page.mouse.down();
+  await page.waitForTimeout(3300);
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.__aq.app.parent.isOpen)).toBe(true);
+  expect(await page.evaluate(() => document.body.innerText.trim())).toBe('');
+  await shot(page, info, '35-parents');
+  // volume
+  await page.evaluate(() => {
+    const r = document.querySelector('.p-range');
+    r.value = '0.35';
+    r.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(await page.evaluate(() => window.__aq.app.audio.volume)).toBeCloseTo(0.35);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).settings.volume, KEY)).toBeCloseTo(0.35);
+  // delete our own fish: ✓
+  await page.locator('.p-delete').click();
+  await page.locator('.p-yes').click();
+  expect(await page.evaluate(() => window.__aq.app.parent.isOpen)).toBe(false);
+  expect(await page.evaluate(() => window.__aq.app.population.own.length)).toBe(0);
+  await expect.poll(() => page.evaluate(() => window.__aq.fish().filter((f) => f.kind === 'design').length), { timeout: 20_000 }).toBe(0);
+  expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.kind === 'starter').length)).toBe(8);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).fish.length, KEY)).toBe(0);
+  expect([...errors, ...more]).toEqual([]);
+});

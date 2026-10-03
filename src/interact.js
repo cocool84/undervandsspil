@@ -29,7 +29,7 @@ export class Interaction {
   }
 
   get enabled() {
-    return this.app.state.started;
+    return this.app.state.started && this.app.view === 'aquarium' && !this.app.busy;
   }
 
   ndc(x, y) {
