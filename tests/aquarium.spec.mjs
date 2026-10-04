@@ -1,6 +1,7 @@
 // End-to-end checks in iPad-sized viewports with touch emulation.
 // Screenshots land in tests/shots/<project>/ for visual review.
 
+import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 
 const SHOTS = 'tests/shots';
@@ -20,6 +21,27 @@ async function openApp(page, query = '') {
   await page.goto(`/${query}`);
   await page.waitForFunction(() => window.__aq && window.__aq.ready === true, null, { timeout: 60_000 });
   return errors;
+}
+
+// On the first visit the service worker installs itself and then takes over the page — and a
+// worker taking over while the start bubble shows may reload the page on purpose (see
+// sw-client.js). Let that be over before a test navigates again, or the two collide.
+async function swSettled(page) {
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const sw = navigator.serviceWorker;
+        if (!sw) return resolve();
+        setTimeout(resolve, 10_000);
+        sw.ready.then(() => (sw.controller ? resolve() : sw.addEventListener('controllerchange', () => resolve(), { once: true })));
+      }),
+  );
+}
+
+async function reloadApp(page) {
+  await swSettled(page);
+  await page.reload();
+  await page.waitForFunction(() => window.__aq && window.__aq.ready === true, null, { timeout: 60_000 });
 }
 
 const shot = (page, info, name) => page.screenshot({ path: `${SHOTS}/${info.project.name}/${name}.png` });
@@ -297,8 +319,7 @@ test('night and mute are remembered', async ({ page }, info) => {
   await page.touchscreen.tap(sound.x + sound.width / 2, sound.y + sound.height / 2);
   await page.waitForTimeout(3000);
   await shot(page, info, '24-night-button');
-  await page.reload();
-  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await reloadApp(page);
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => window.__aq.app.audio.muted)).toBe(true);
   expect(await page.locator('#btn-night').getAttribute('class')).toContain('is-night');
@@ -382,6 +403,7 @@ const ownFishDNA = (n, kind = 'design', from = 0) =>
   Array.from({ length: n }, (_, i) => ({ id: `test-${kind}-${from + i}`, born: 1000 + from + i, kind, shape: (from + i) % 4, color: '#3fa9ff', pattern: (from + i) % 4, eyes: (from + i) % 4, glow: true, seed: 5000 + from + i, paint: null, color2: null }));
 
 async function seedFish(page, fish, sea = []) {
+  await swSettled(page);
   await page.evaluate(([key, list, seaList]) => localStorage.setItem(key, JSON.stringify({ v: 1, settings: { volume: 0.7 }, fish: list, sea: seaList })), [KEY, fish, sea]);
 }
 
@@ -439,8 +461,7 @@ test('fish factory: shape, paint, pattern, eyes, let it go — and it is saved',
   await shot(page, info, '33-new-fish');
   expect(await page.evaluate(() => window.__aq.fish().length)).toBe(9);
   // saved: still there after a reload, painting and all
-  await page.reload();
-  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await reloadApp(page);
   const after = await page.evaluate(() => window.__aq.app.population.own.map((d) => ({ shape: d.shape, painted: !!d.paint })));
   expect(after).toEqual([{ shape: 1, painted: browserName === 'chromium' }]);
   expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.kind === 'design').length)).toBe(1);
@@ -472,8 +493,7 @@ test('the unfinished fish is remembered', async ({ page }) => {
   await tapEl(page, '.fac-home');
   await page.waitForFunction(() => window.__aq.app.view === 'aquarium' && !window.__aq.app.busy);
   await page.waitForTimeout(700);
-  await page.reload();
-  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await reloadApp(page);
   const d = await page.evaluate(() => ({ ...window.__aq.app.factory.draft, step: window.__aq.app.factory.step }));
   expect(d).toMatchObject({ shape: 3, color: '#ff5d8f', step: 1 });
   expect(errors).toEqual([]);
@@ -482,8 +502,7 @@ test('the unfinished fish is remembered', async ({ page }) => {
 test('never more than 25 fish: starters make room first, then the oldest wand fish', async ({ page }) => {
   const errors = await openApp(page, '?autostart');
   await seedFish(page, ownFishDNA(17));
-  await page.reload();
-  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await reloadApp(page);
   expect(await page.evaluate(() => window.__aq.fish().length)).toBe(25);
   // one more: a starter swims out
   await page.evaluate(() => window.__aq.app.population.release({ id: 'new-1', born: Date.now(), kind: 'design', shape: 0, color: '#ff5d8f', pattern: 0, eyes: 0, glow: true, seed: 9, paint: null }));
@@ -493,8 +512,7 @@ test('never more than 25 fish: starters make room first, then the oldest wand fi
 
   // full of own fish: the oldest wand fish makes room (and is gone for good)
   await seedFish(page, [...ownFishDNA(2, 'wand', 0), ...ownFishDNA(23, 'design', 2)]);
-  await page.reload();
-  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await reloadApp(page);
   expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.kind === 'starter').length)).toBe(0);
   await page.evaluate(() => window.__aq.app.population.release({ id: 'new-2', born: Date.now(), kind: 'design', shape: 1, color: '#ff5d8f', pattern: 0, eyes: 0, glow: true, seed: 10, paint: null }));
   expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.state === 'leave').map((f) => f.id))).toEqual(['test-wand-0']);
@@ -748,8 +766,7 @@ test('the world button takes us to the open sea and back — and the app remembe
   const stats = await page.evaluate(() => window.__aq.snapshotStats());
   expect(stats.std, 'the sea should not be blank').toBeGreaterThan(0.04);
   // remembered: after a reload we are still in the open sea
-  await page.reload();
-  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await reloadApp(page);
   expect(await page.evaluate(() => window.__aq.app.world.kind)).toBe('ocean');
   const more = await startApp(page);
   // …and back home to the reef with its eight fish
@@ -887,8 +904,7 @@ test('in the open sea the fish factory makes big animals — saved in the sea, n
   const stored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), KEY);
   expect(stored.sea.map((d) => d.shape)).toEqual([6]);
   expect(stored.fish).toEqual([]);
-  await page.reload();
-  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await reloadApp(page);
   expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.kind === 'design').map((f) => f.shape))).toEqual([6]);
   expect(errors).toEqual([]);
 });
@@ -896,8 +912,7 @@ test('in the open sea the fish factory makes big animals — saved in the sea, n
 test('never more than 8 big animals: the starters make room first', async ({ page }) => {
   const errors = await openApp(page, '?autostart&ocean');
   await seedFish(page, [], seaAnimals(4));
-  await page.reload();
-  await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
+  await reloadApp(page);
   expect(await page.evaluate(() => window.__aq.fish().length)).toBe(8);
   await page.evaluate(() => window.__aq.app.population.release({ id: 'new-sea-1', born: Date.now(), kind: 'design', shape: 7, color: '#35d07f', pattern: 0, eyes: 0, glow: true, seed: 11, paint: null }));
   expect(await page.evaluate(() => window.__aq.fish().filter((f) => f.state === 'leave').map((f) => f.kind))).toEqual(['starter']);
@@ -936,5 +951,95 @@ test('big animals QA grid: every animal, with and without patterns', async ({ pa
   await page.waitForFunction(() => window.__aq && window.__aq.ready === true);
   await page.waitForTimeout(2500);
   await shot(page, info, '69-animals-grid-patterns');
+  expect(errors).toEqual([]);
+});
+
+// ---------------------------------------------------------------- saved before the open sea came along
+
+// Real files from the version before the open sea (commit 15bed80), made by playing with it as
+// a child and a parent would: three fish (finger-painted, from the magic wand, plain), an
+// unfinished painted fish left in the factory, night on and the volume turned down.
+// storage.json is what that version kept in localStorage, akvariet-2026-10-04.json its
+// "save a copy" file.
+const BEFORE_SEA = new URL('./fixtures/before-sea/', import.meta.url);
+const oldStorage = readFileSync(new URL('storage.json', BEFORE_SEA), 'utf8');
+const oldCopyName = 'akvariet-2026-10-04.json';
+const oldCopy = readFileSync(new URL(oldCopyName, BEFORE_SEA));
+
+// Does the fish wear its painting: a 512×256 canvas with strokes clearly unlike its base colour?
+function wearsPainting(page, id) {
+  return page.evaluate((fid) => {
+    const fish = window.__aq.app.world.school.fish.find((q) => q.dna.id === fid);
+    if (!fish) return false;
+    const { canvas, ctx } = fish.paint;
+    const base = [1, 3, 5].map((i) => parseInt(fish.dna.color.slice(i, i + 2), 16));
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let most = 0;
+    for (let i = 0; i < d.length; i += 4 * 61) most = Math.max(most, Math.abs(d[i] - base[0]) + Math.abs(d[i + 1] - base[1]) + Math.abs(d[i + 2] - base[2]));
+    return canvas.width === 512 && most > 90;
+  }, id);
+}
+
+test('fish saved before the open sea came along are all still there — and stay there', async ({ page }) => {
+  const old = JSON.parse(oldStorage);
+  expect(old.sea).toBeUndefined(); // (really the old format)
+  expect(old.settings.world).toBeUndefined();
+  const errors = await openApp(page);
+  await swSettled(page);
+  await page.evaluate(([key, raw]) => localStorage.setItem(key, raw), [KEY, oldStorage]);
+  const more = await startApp(page);
+  // all three swim in the reef, exactly as they were saved, paintings and all
+  expect(await page.evaluate(() => window.__aq.app.world.kind)).toBe('reef');
+  expect(await page.evaluate(() => window.__aq.app.populations.reef.own)).toEqual(old.fish);
+  expect(await page.evaluate(() => window.__aq.app.populations.ocean.own)).toEqual([]);
+  const ids = await page.evaluate(() => window.__aq.fish().map((f) => f.id));
+  expect(ids).toHaveLength(8 + old.fish.length);
+  for (const f of old.fish) expect(ids).toContain(f.id);
+  for (const f of old.fish.filter((d) => d.paint)) await expect.poll(() => wearsPainting(page, f.id)).toBe(true);
+  // …the settings too, and the unfinished fish in the factory with its painting
+  expect(await page.evaluate(() => ({ night: window.__aq.app.audio.night, volume: window.__aq.app.audio.volume }))).toEqual({ night: true, volume: 0.45 });
+  expect(await page.locator('#btn-night').getAttribute('class')).toContain('is-night');
+  const draft = await page.evaluate(() => {
+    const f = window.__aq.app.factory;
+    return { shape: f.draft.shape, color: f.draft.color, brush: f.draft.brush, step: f.step, sea: f.sea };
+  });
+  expect(draft).toEqual({ shape: old.draft.shape, color: old.draft.color, brush: old.draft.brush, step: old.draft.step, sea: false });
+  await expect.poll(() => page.evaluate(() => window.__aq.app.factory.painter.hasStrokes)).toBe(true);
+  // off to the open sea: the new version writes its own things next to the old ones and
+  // keeps those exactly as they were
+  await tapEl(page, '#btn-world');
+  await page.waitForFunction(() => window.__aq.app.world.kind === 'ocean' && !window.__aq.app.busy, null, { timeout: 15_000 });
+  expect((await page.evaluate(() => window.__aq.fish().map((f) => f.shape))).sort()).toEqual([4, 5, 6, 7]);
+  const stored = JSON.parse(await page.evaluate((key) => localStorage.getItem(key), KEY));
+  expect(stored.fish).toEqual(old.fish);
+  expect(stored.draft).toEqual(old.draft);
+  expect(stored.settings).toEqual({ ...old.settings, world: 'ocean' });
+  // after a reload (in the sea, where we left off) the reef's fish are still ours
+  await reloadApp(page);
+  expect(await page.evaluate(() => window.__aq.app.world.kind)).toBe('ocean');
+  expect(await page.evaluate(() => window.__aq.app.populations.reef.own)).toEqual(old.fish);
+  expect([...errors, ...more]).toEqual([]);
+});
+
+test('a copy file saved before the open sea came along can still be loaded — the fish go home to the reef', async ({ page }) => {
+  const old = JSON.parse(oldCopy.toString('utf8'));
+  expect(old.sea).toBeUndefined(); // (really the old format)
+  // loaded out in the open sea: the fish still belong in the reef
+  const errors = await startApp(page, '?ocean');
+  await openParents(page);
+  await page.setInputFiles('.p-file', { name: oldCopyName, mimeType: 'application/json', buffer: oldCopy });
+  await expect(page.locator('.p-load')).toHaveClass(/p-ok/);
+  expect(await page.evaluate(() => window.__aq.app.populations.reef.own)).toEqual(old.fish);
+  expect(await page.evaluate(() => window.__aq.app.populations.ocean.own)).toEqual([]);
+  expect(await page.evaluate(() => window.__aq.fish().length)).toBe(4); // the open sea is as it was
+  await page.evaluate(() => window.__aq.app.populations.reef.saving);
+  expect(JSON.parse(await page.evaluate((key) => localStorage.getItem(key), KEY)).fish).toEqual(old.fish);
+  // home to the reef: there they are, paintings and all
+  await page.locator('.p-close').click();
+  await tapEl(page, '#btn-world');
+  await page.waitForFunction(() => window.__aq.app.world.kind === 'reef' && !window.__aq.app.busy, null, { timeout: 15_000 });
+  const ids = await page.evaluate(() => window.__aq.fish().map((f) => f.id));
+  for (const f of old.fish) expect(ids).toContain(f.id);
+  for (const f of old.fish.filter((d) => d.paint)) await expect.poll(() => wearsPainting(page, f.id)).toBe(true);
   expect(errors).toEqual([]);
 });

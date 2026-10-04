@@ -36,7 +36,12 @@ npm run icons        # PNG-ikoner ud fra icons/icon.svg
 - **Projekterne:** WebKit ligger tættest på Safari. Chromium bruges til ægte multitouch og træk via CDP `Input.dispatchTouchEvent`; de tests springes over i WebKit.
 - **Lav fps i Chromium:** headless Chromium renderer i software, så lav fps og nedskalering der er forventet og ikke en fejl.
 - **Skærmbilleder:** havner i `tests/shots/<projekt>/` (git-ignoreret). Se dem kritisk efter visuelle ændringer.
-- **Fuld kørsel:** tager ca. 15–20 min. Kør den i baggrunden og rediger ikke filer i `src/` imens, for testene henter modulerne fra dev-serveren.
+- **Fuld kørsel:** tager ca. 20–25 min. Kør den i baggrunden og rediger ikke filer i `src/` imens, for testene henter modulerne fra dev-serveren.
+- **Gamle gemte data (`tests/fixtures/before-sea/`):** rigtige filer fra versionen før havet (commit `15bed80`). De er lavet ved at lege med den gamle version og må **ikke** genskabes eller rettes.
+  - `storage.json` er det, den gamle version gemte i localStorage.
+  - `akvariet-2026-10-04.json` er dens gem-kopi-fil.
+  
+  Testene sikrer, at begge stadig hentes rigtigt. Ændres gemme-formatet igen, så læg nye filer ved siden af, lavet med den version, der kommer før ændringen.
 - **Test-hooks:**
   - `window.__aq`: `ready`, `perf()`, `fish()`, `bubbles()`, `whatIsAt(x, y)`, `snapshotStats()`. De gælder altid det akvarium, der vises.
   - `__aq.app` giver adgang til alt internt, fx `world` (det viste akvarium, `kind` = `'reef'` | `'ocean'`), `worlds`, `population`, `populations.reef`/`.ocean`, `switchWorld()`, `factory`, `parent` og `audio`.
@@ -109,6 +114,7 @@ ES-moduler uden bundler. Three.js **0.186.1** ligger i `vendor/three/` (låst ve
   - `setTerrain(kind)` bestemmer, hvilken havbund `sandHeight` beskriver. `setPalette(kind)` styrer vandets farver og lys.
   - Lysnettet (caustics) deles af begge akvarier og fabrikken.
 - **Gemning:** nøglen `undervandsspil.v1` = `{v:1, settings:{night, muted, volume, ambience, world}, fish:[DNA], sea:[DNA], draft}`. `fish` er revets egne fisk, `sea` havets egne dyr, og `world` er det akvarium, man var i sidst. Malerier gemmes som JPEG data-URL i 512×256. Ved fuld kvote bliver malerierne mindre, og som sidste udvej mister de ældste deres maleri. En fisk går aldrig tabt.
+  - Data og kopi-filer fra før havet (uden `sea` og `settings.world`) hentes uændret: fiskene kommer i revet, og havet starter med sine fire dyr. En kopi-fil hentet i havet sender stadig revets fisk hjem til revet.
 - **DNA:** `{id, born, kind:'design'|'wand'|'starter', shape 0–7, color, pattern 0–3 (ingen, striber, prikker, regnbue), eyes 0–3 (store, søvnige, glade, googly), glow, seed, paint, color2}`. Formerne er 0–3 for revets fisk (rund, lang, trekant, kuglefisk) og 4–7 for havets dyr (delfin, haj, spækhugger, hval).
 
 ## Beslutninger truffet undervejs
